@@ -107,6 +107,34 @@ class GPTMailMailboxTests(unittest.TestCase):
         self.assertEqual(ids, {"m1", "m2"})
         mock_get_emails.assert_called_once_with("demo@example.com")
 
+    @patch.dict(
+        "os.environ",
+        {
+            "HTTP_PROXY": "http://127.0.0.1:7890",
+            "HTTPS_PROXY": "http://127.0.0.1:7890",
+        },
+        clear=False,
+    )
+    @patch("core.gptmail_automation.cffi_requests.Session")
+    def test_automation_session_ignores_environment_proxy_when_no_proxy_url(
+        self,
+        mock_session_cls,
+    ):
+        from core.gptmail_automation import GPTMailAutomationClient
+
+        client = GPTMailAutomationClient(
+            api_base="https://mail.chatgpt.org.uk",
+            proxy_url=None,
+        )
+
+        client._session._ensure_session()
+
+        mock_session_cls.assert_called_once_with(
+            impersonate="chrome",
+            proxies={"all": ""},
+            timeout=15,
+        )
+
     @patch("time.sleep", return_value=None)
     @patch("requests.request")
     def test_wait_for_code_skips_excluded_codes_and_fetches_detail(self, mock_request, _sleep):

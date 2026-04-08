@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import time
@@ -50,16 +49,12 @@ class _InboxSession:
 
     def _ensure_session(self) -> Session:
         if self.session is None:
-            proxy_url = self.proxy_url or normalize_proxy_url(
-                os.environ.get("HTTPS_PROXY")
-                or os.environ.get("HTTP_PROXY")
-                or os.environ.get("GLOBAL_PROXY")
-            )
-            proxies = (
-                {"http": proxy_url, "https": proxy_url}
-                if proxy_url
-                else None
-            )
+            if self.proxy_url:
+                proxies = {"http": self.proxy_url, "https": self.proxy_url}
+            else:
+                # curl_cffi/libcurl still inherits env proxies unless proxy is
+                # explicitly set to an empty direct route.
+                proxies = {"all": ""}
             self.session = cffi_requests.Session(
                 impersonate="chrome",
                 proxies=proxies,
