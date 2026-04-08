@@ -5,6 +5,9 @@ from typing import Optional
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 
+MAILBOX_PROXY_BYPASS_CONFIG = {"http": None, "https": None, "all": None}
+
+
 def _is_auth_socks_proxy(scheme: str, username: str, password: str) -> bool:
     normalized = (scheme or "").lower()
     return normalized in {"socks5", "socks5h"} and bool(username or password)
@@ -62,10 +65,24 @@ def build_requests_proxy_config(proxy_url: Optional[str]) -> Optional[dict[str, 
     return {"http": proxy_url, "https": proxy_url}
 
 
-def build_mailbox_proxy_config(proxy_url: Optional[str]) -> Optional[dict[str, str]]:
-    """Mailbox provider HTTP requests should bypass the configured register proxy."""
+def build_mailbox_proxy_config(
+    proxy_url: Optional[str],
+) -> Optional[dict[str, Optional[str]]]:
+    """Mailbox provider HTTP requests should bypass configured and env proxies."""
     _ = proxy_url
-    return None
+    return dict(MAILBOX_PROXY_BYPASS_CONFIG)
+
+
+def create_mailbox_requests_session(
+    proxy_config: Optional[dict[str, Optional[str]]] = None,
+):
+    import requests
+
+    session = requests.Session()
+    session.trust_env = False
+    if proxy_config is not None:
+        session.proxies = dict(proxy_config)
+    return session
 
 
 def build_playwright_proxy_config(proxy_url: Optional[str]) -> Optional[dict[str, str]]:

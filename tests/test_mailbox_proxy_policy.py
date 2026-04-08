@@ -2,6 +2,8 @@ import unittest
 from unittest.mock import patch
 
 from core.base_mailbox import TempMailLolMailbox, create_mailbox
+from core.proxy_utils import MAILBOX_PROXY_BYPASS_CONFIG
+from core.proxy_utils import create_mailbox_requests_session
 
 
 class MailboxProxyPolicyTests(unittest.TestCase):
@@ -117,8 +119,34 @@ class MailboxProxyPolicyTests(unittest.TestCase):
                     extra=extra,
                     proxy="http://proxy.local:8080",
                 )
-                self.assertIsNone(self._get_mailbox_proxy(mailbox))
+                self.assertEqual(
+                    self._get_mailbox_proxy(mailbox),
+                    MAILBOX_PROXY_BYPASS_CONFIG,
+                )
                 self.assertIsNone(getattr(mailbox, "_proxy_url", None))
+
+    def test_mailbox_session_ignores_environment_proxy(self):
+        session = create_mailbox_requests_session(MAILBOX_PROXY_BYPASS_CONFIG)
+
+        self.assertFalse(session.trust_env)
+        self.assertEqual(session.proxies, MAILBOX_PROXY_BYPASS_CONFIG)
+
+    @patch.dict("os.environ", {"ALL_PROXY": "http://127.0.0.1:7899"}, clear=True)
+    def test_mailbox_bypass_config_blocks_all_proxy_in_requests_merge(self):
+        import requests
+
+        merged = requests.Session().merge_environment_settings(
+            "https://cftempmail.highkay.qzz.io/admin/new_address",
+            dict(MAILBOX_PROXY_BYPASS_CONFIG),
+            None,
+            None,
+            None,
+        )
+
+        self.assertEqual(
+            merged["proxies"],
+            {},
+        )
 
     @patch("requests.post")
     def test_tempmail_direct_instantiation_bypasses_proxy(self, mock_post):
@@ -132,11 +160,11 @@ class MailboxProxyPolicyTests(unittest.TestCase):
 
         self.assertEqual(account.email, "demo@example.com")
         self.assertEqual(account.account_id, "token-123")
-        self.assertIsNone(mailbox.proxy)
+        self.assertEqual(mailbox.proxy, MAILBOX_PROXY_BYPASS_CONFIG)
         mock_post.assert_called_once_with(
             "https://api.tempmail.lol/v2/inbox/create",
             json={},
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=15,
         )
 

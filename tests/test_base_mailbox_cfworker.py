@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from core.base_mailbox import MailboxAccount, create_mailbox
+from core.proxy_utils import MAILBOX_PROXY_BYPASS_CONFIG
 
 
 class CFWorkerMailboxTests(unittest.TestCase):
@@ -40,7 +41,7 @@ class CFWorkerMailboxTests(unittest.TestCase):
                 "content-type": "application/json",
                 "x-admin-auth": "admin-token",
             },
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=15,
         )
 
@@ -70,7 +71,7 @@ class CFWorkerMailboxTests(unittest.TestCase):
                 "content-type": "application/json",
                 "x-admin-auth": "admin-token",
             },
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=10,
         )
 

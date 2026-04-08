@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from core.base_mailbox import MailboxAccount, create_mailbox
+from core.proxy_utils import MAILBOX_PROXY_BYPASS_CONFIG
 
 
 class GPTMailMailboxTests(unittest.TestCase):
@@ -36,7 +37,7 @@ class GPTMailMailboxTests(unittest.TestCase):
                 "accept": "application/json",
                 "X-API-Key": "gpt-test",
             },
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=15,
         )
 
@@ -89,7 +90,7 @@ class GPTMailMailboxTests(unittest.TestCase):
                 "accept": "application/json",
                 "X-API-Key": "gpt-test",
             },
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=10,
         )
 

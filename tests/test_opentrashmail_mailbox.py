@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from core.base_mailbox import MailboxAccount, create_mailbox
+from core.proxy_utils import MAILBOX_PROXY_BYPASS_CONFIG
 
 
 class OpenTrashMailMailboxTests(unittest.TestCase):
@@ -46,7 +47,7 @@ class OpenTrashMailMailboxTests(unittest.TestCase):
             params={"password": "secret-pass"},
             json=None,
             headers={"accept": "application/json, text/plain, */*"},
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=15,
         )
 
@@ -75,7 +76,7 @@ class OpenTrashMailMailboxTests(unittest.TestCase):
             params={"password": "secret-pass"},
             json=None,
             headers={"accept": "application/json, text/plain, */*"},
-            proxies=None,
+            proxies=MAILBOX_PROXY_BYPASS_CONFIG,
             timeout=10,
         )
 

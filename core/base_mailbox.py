@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from .proxy_utils import build_mailbox_proxy_config
+from .proxy_utils import create_mailbox_requests_session
 
 
 @dataclass
@@ -3227,8 +3228,7 @@ class MoeMailMailbox(BaseMailbox):
 
         import requests
 
-        s = requests.Session()
-        s.proxies = self.proxy
+        s = create_mailbox_requests_session(self.proxy)
         ua = (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -4731,8 +4731,7 @@ class FreemailMailbox(BaseMailbox):
     def _get_session(self):
         import requests
 
-        s = requests.Session()
-        s.proxies = self.proxy
+        s = create_mailbox_requests_session(self.proxy)
         if self.admin_token:
             s.headers.update({"Authorization": f"Bearer {self.admin_token}"})
         elif self.username and self.password:
