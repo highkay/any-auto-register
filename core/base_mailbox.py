@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from .proxy_utils import build_requests_proxy_config
+from .proxy_utils import build_mailbox_proxy_config
 
 
 @dataclass
@@ -379,7 +379,7 @@ class AppleMailMailbox(BaseMailbox):
         self.pool_file = str(pool_file or "").strip()
         self.pool_dir = str(pool_dir or "mail").strip() or "mail"
         self.mailboxes = self._normalize_mailboxes(mailboxes)
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._email = None
         self._selected_record = None
         self._selected_pool_path = None
@@ -860,7 +860,7 @@ class TempMailLolMailbox(BaseMailbox):
 
     def __init__(self, proxy: str = None):
         self.api = "https://api.tempmail.lol/v2"
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._token = None
         self._email = None
 
@@ -956,7 +956,7 @@ class SkyMailMailbox(BaseMailbox):
         self.api = (api_base or "").rstrip("/")
         self.auth_token = auth_token or ""
         self.domain = domain or ""
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
 
     def _headers(self) -> dict:
         return {
@@ -1122,7 +1122,7 @@ class CloudMailMailbox(BaseMailbox):
         self.domain = domain
         self.subdomain = str(subdomain or "").strip()
         self.timeout = max(int(timeout or 30), 5)
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
 
     @staticmethod
     def _extract_domain_from_url(url: str) -> str:
@@ -1448,7 +1448,7 @@ class DuckMailMailbox(BaseMailbox):
         self.bearer = bearer or "kevin273945"
         self.domain = str(domain or "").strip()
         self.api_key = str(api_key or "").strip()
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._token = None
         self._address = None
         # 如果配置了 API Key，直接请求 DuckMail API；否则走前端代理
@@ -1645,7 +1645,7 @@ class MaliAPIMailbox(BaseMailbox):
         self.api_key = str(api_key or "").strip()
         self.domain = str(domain or "").strip()
         self.auto_domain_strategy = str(auto_domain_strategy or "").strip()
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._email = None
         self._temp_token = None
 
@@ -1843,8 +1843,10 @@ class GPTMailMailbox(BaseMailbox):
         self.api_key = str(api_key or "").strip()
         self.domain = self._normalize_domain(domain)
         self.mode = self._normalize_mode(mode)
-        self._proxy_url = proxy
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
+        # Mailbox providers should bypass the configured register proxy,
+        # including GPTMail automation mode.
+        self._proxy_url = None
         self._email = None
         self._automation_client = None
 
@@ -2085,7 +2087,7 @@ class OpenTrashMailMailbox(BaseMailbox):
         self.api = str(api_url or "").strip().rstrip("/")
         self.domain = self._normalize_domain(domain)
         self.password = str(password or "").strip()
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
 
     @staticmethod
     def _normalize_domain(value: Any) -> str:
@@ -2363,8 +2365,8 @@ class CFRoutingMailbox(BaseMailbox):
         self.poll_interval_seconds = self._normalize_poll_interval(
             poll_interval_seconds
         )
-        # 当前 provider 只使用 IMAP，暂未对 IMAP 连接做代理封装；保留参数以兼容统一工厂。
-        self.proxy = build_requests_proxy_config(proxy)
+        # Mailbox providers should bypass the configured register proxy.
+        self.proxy = build_mailbox_proxy_config(proxy)
 
     @staticmethod
     def _normalize_domain(domain: Any) -> str:
@@ -2890,7 +2892,7 @@ class CFWorkerMailbox(BaseMailbox):
         self.random_name_subdomain = self._to_bool(random_name_subdomain)
         self.fingerprint = fingerprint
         self.custom_auth = custom_auth
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._token = None
 
     def _headers(self) -> dict:
@@ -3211,7 +3213,7 @@ class MoeMailMailbox(BaseMailbox):
     ):
         self.api = api_url.rstrip("/")
         self.api_key = str(api_key or "").strip()
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._session_token = None
         self._email = None
 
@@ -4070,7 +4072,7 @@ class OutlookMailbox(BaseMailbox):
         proxy: str = None,
     ):
         self._lock = threading.Lock()
-        self._proxy = build_requests_proxy_config(proxy)
+        self._proxy = build_mailbox_proxy_config(proxy)
         self._imap_servers = []
         if imap_server:
             self._imap_servers.append(str(imap_server).strip())
@@ -4721,7 +4723,7 @@ class FreemailMailbox(BaseMailbox):
         self.username = username
         self.password = password
         self.domain = str(domain or "").strip().lstrip("@")
-        self.proxy = build_requests_proxy_config(proxy)
+        self.proxy = build_mailbox_proxy_config(proxy)
         self._session = None
         self._email = None
         self._domains = None

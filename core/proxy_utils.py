@@ -62,6 +62,12 @@ def build_requests_proxy_config(proxy_url: Optional[str]) -> Optional[dict[str, 
     return {"http": proxy_url, "https": proxy_url}
 
 
+def build_mailbox_proxy_config(proxy_url: Optional[str]) -> Optional[dict[str, str]]:
+    """Mailbox provider HTTP requests should bypass the configured register proxy."""
+    _ = proxy_url
+    return None
+
+
 def build_playwright_proxy_config(proxy_url: Optional[str]) -> Optional[dict[str, str]]:
     if not proxy_url:
         return None
