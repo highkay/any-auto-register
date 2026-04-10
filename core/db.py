@@ -49,6 +49,28 @@ class TaskLog(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
 
 
+class TaskRunModel(SQLModel, table=True):
+    __tablename__ = "task_runs"
+
+    id: str = Field(primary_key=True)
+    platform: str = Field(index=True)
+    source: str = Field(default="manual", index=True)
+    status: str = Field(default="pending", index=True)
+    total: int = 0
+    progress: str = "0/0"
+    success: int = 0
+    registered: int = 0
+    skipped: int = 0
+    error: str = ""
+    meta_json: str = "{}"
+    logs_json: str = "[]"
+    errors_json: str = "[]"
+    cashier_urls_json: str = "[]"
+    control_json: str = "{}"
+    created_at: datetime = Field(default_factory=_utcnow, index=True)
+    updated_at: datetime = Field(default_factory=_utcnow, index=True)
+
+
 class OutlookAccountModel(SQLModel, table=True):
     __tablename__ = "outlook_accounts"
 
