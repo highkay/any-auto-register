@@ -79,6 +79,8 @@ class OutlookAccountModel(SQLModel, table=True):
     password: str
     client_id: str = ""
     refresh_token: str = ""
+    account_type: str = "microsoft_oauth"
+    mailapi_url: str = ""
     enabled: bool = True
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
@@ -135,8 +137,33 @@ def save_account(account) -> 'AccountModel':
         return m
 
 
+def _migrate_outlook_accounts_schema() -> None:
+    if engine.url.get_backend_name() != "sqlite":
+        return
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info('outlook_accounts')").fetchall()
+        if not rows:
+            return
+        existing_columns = {str(row[1]) for row in rows}
+        if "account_type" not in existing_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE outlook_accounts ADD COLUMN account_type TEXT DEFAULT 'microsoft_oauth'"
+            )
+        if "mailapi_url" not in existing_columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE outlook_accounts ADD COLUMN mailapi_url TEXT DEFAULT ''"
+            )
+        conn.exec_driver_sql(
+            "UPDATE outlook_accounts SET account_type = 'microsoft_oauth' WHERE account_type IS NULL OR TRIM(account_type) = ''"
+        )
+        conn.exec_driver_sql(
+            "UPDATE outlook_accounts SET mailapi_url = '' WHERE mailapi_url IS NULL"
+        )
+
+
 def init_db():
     SQLModel.metadata.create_all(engine)
+    _migrate_outlook_accounts_schema()
 
 
 def get_session():
