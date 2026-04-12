@@ -4054,6 +4054,89 @@ class OutlookGraphMailboxBackend(OutlookMailboxBackend):
         )
 
 
+class MailApiUrlOtpBackend(OutlookMailboxBackend):
+    backend_name = "mailapi_url"
+
+    @staticmethod
+    def _code_key(code: str) -> str:
+        return f"mailapi_code:{str(code or '').strip()}"
+
+    def _fetch_mailapi_text(self, account: MailboxAccount) -> str:
+        import requests
+
+        extra = account.extra or {}
+        url = str(extra.get("mailapi_url") or "").strip()
+        if not url:
+            raise RuntimeError("mailapi_url 为空，无法轮询取码")
+        response = requests.get(
+            url,
+            timeout=15,
+            proxies=getattr(self.mailbox, "_proxy", None),
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"MailAPI 取码请求失败: HTTP {response.status_code}"
+            )
+        return str(response.text or "")
+
+    def _extract_code(self, text: str, code_pattern: str | None) -> str:
+        normalized_text = self.mailbox._decode_raw_content(text) or str(text or "")
+        return str(self.mailbox._safe_extract(normalized_text, code_pattern) or "").strip()
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        try:
+            text = self._fetch_mailapi_text(account)
+            code = self._extract_code(text, None)
+            return {self._code_key(code)} if code else set()
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set | None = None,
+        code_pattern: str | None = None,
+        **kwargs,
+    ) -> str:
+        seen = {str(mid) for mid in (before_ids or set())}
+        exclude_codes = {
+            str(code).strip()
+            for code in (kwargs.get("exclude_codes") or set())
+            if str(code or "").strip()
+        }
+        keyword_lower = str(keyword or "").strip().lower()
+
+        def poll_once() -> Optional[str]:
+            try:
+                text = self._fetch_mailapi_text(account)
+            except Exception as exc:
+                self.mailbox._log(f"[MailAPI] 拉取失败: {exc}")
+                return None
+
+            if keyword_lower and keyword_lower not in str(text).lower():
+                return None
+            code = self._extract_code(text, code_pattern)
+            if not code:
+                return None
+            if code in exclude_codes:
+                self.mailbox._log(f"[MailAPI] 跳过已尝试验证码: {code}")
+                return None
+            code_key = self._code_key(code)
+            if code_key in seen:
+                return None
+            seen.add(code_key)
+            self.mailbox._log(f"[MailAPI] 收到验证码: {code}")
+            return code
+
+        return self.mailbox._run_polling_wait(
+            timeout=timeout,
+            poll_interval=3,
+            poll_once=poll_once,
+        )
+
+
 class OutlookMailbox(BaseMailbox):
     """微软邮箱（Outlook / Hotmail）本地账号池（Graph / IMAP 策略）"""
 
@@ -4105,12 +4188,27 @@ class OutlookMailbox(BaseMailbox):
         self._backends: dict[str, OutlookMailboxBackend] = {
             "imap": OutlookImapMailboxBackend(self),
             "graph": OutlookGraphMailboxBackend(self),
+            "mailapi_url": MailApiUrlOtpBackend(self),
         }
 
     @staticmethod
     def _normalize_backend_name(value: Any) -> str:
         backend = str(value or "graph").strip().lower() or "graph"
         return backend if backend in {"graph", "imap"} else "graph"
+
+    @staticmethod
+    def _normalize_account_type(value: Any) -> str:
+        account_type = str(value or "").strip().lower()
+        if account_type in {"mailapi_url", "microsoft_oauth"}:
+            return account_type
+        return "microsoft_oauth"
+
+    def _is_mailapi_account(self, account: MailboxAccount) -> bool:
+        extra = getattr(account, "extra", None) or {}
+        account_type = self._normalize_account_type(extra.get("account_type"))
+        if account_type == "mailapi_url":
+            return True
+        return bool(str(extra.get("mailapi_url") or "").strip())
 
     def _pop_account(self) -> dict:
         from sqlmodel import Session, select
@@ -4136,6 +4234,8 @@ class OutlookMailbox(BaseMailbox):
                     "password": account.password,
                     "client_id": account.client_id,
                     "refresh_token": account.refresh_token,
+                    "account_type": getattr(account, "account_type", "microsoft_oauth"),
+                    "mailapi_url": getattr(account, "mailapi_url", ""),
                 }
                 session.delete(account)
                 session.commit()
@@ -4149,13 +4249,21 @@ class OutlookMailbox(BaseMailbox):
         password = str(payload.get("password") or "")
         client_id = str(payload.get("client_id") or "")
         refresh_token = str(payload.get("refresh_token") or "")
-        auth_mode = "oauth" if client_id and refresh_token else "password"
+        account_type = self._normalize_account_type(payload.get("account_type"))
+        mailapi_url = str(payload.get("mailapi_url") or "").strip()
+        auth_mode = (
+            "mailapi_url"
+            if account_type == "mailapi_url"
+            else ("oauth" if client_id and refresh_token else "password")
+        )
         self._log(f"[微软邮箱] 取出账号: {email}（已从本地池移除）")
         self._log(
             "[微软邮箱] 账号认证信息: "
             f"has_password={bool(password)} "
             f"has_client_id={bool(client_id)} "
             f"has_refresh_token={bool(refresh_token)} "
+            f"has_mailapi_url={bool(mailapi_url)} "
+            f"account_type={account_type} "
             f"auth_mode={auth_mode}"
         )
         return MailboxAccount(
@@ -4166,6 +4274,8 @@ class OutlookMailbox(BaseMailbox):
                 "password": password,
                 "client_id": client_id,
                 "refresh_token": refresh_token,
+                "account_type": account_type,
+                "mailapi_url": mailapi_url,
                 "outlook_backend": self._backend_name,
             },
         )
@@ -4182,6 +4292,8 @@ class OutlookMailbox(BaseMailbox):
         password = str(extra.get("password") or "")
         client_id = str(extra.get("client_id") or "")
         refresh_token = str(extra.get("refresh_token") or "")
+        account_type = self._normalize_account_type(extra.get("account_type"))
+        mailapi_url = str(extra.get("mailapi_url") or "")
 
         with self._lock:
             with Session(engine) as session:
@@ -4189,6 +4301,11 @@ class OutlookMailbox(BaseMailbox):
                     select(OutlookAccountModel).where(OutlookAccountModel.email == email)
                 ).first()
                 if existing:
+                    existing.password = password
+                    existing.client_id = client_id
+                    existing.refresh_token = refresh_token
+                    existing.account_type = account_type
+                    existing.mailapi_url = mailapi_url
                     existing.enabled = True
                     existing.updated_at = _utcnow()
                     session.add(existing)
@@ -4199,6 +4316,8 @@ class OutlookMailbox(BaseMailbox):
                             password=password,
                             client_id=client_id,
                             refresh_token=refresh_token,
+                            account_type=account_type,
+                            mailapi_url=mailapi_url,
                             enabled=True,
                             created_at=_utcnow(),
                             updated_at=_utcnow(),
@@ -4517,6 +4636,8 @@ class OutlookMailbox(BaseMailbox):
 
     def _resolve_backend(self, account: MailboxAccount) -> OutlookMailboxBackend:
         extra = account.extra or {}
+        if self._is_mailapi_account(account):
+            return self._backends["mailapi_url"]
         override = self._normalize_backend_name(
             extra.get("outlook_backend") or self._backend_name
         )
