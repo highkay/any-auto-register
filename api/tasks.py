@@ -268,10 +268,15 @@ def _get_task_snapshot(task_id: str) -> dict:
 
 def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
     from core.config_store import config_store
+    from core.registry import is_platform_enabled
 
     req_data = req.model_dump()
     req_data["extra"] = deepcopy(req_data.get("extra") or {})
     prepared = RegisterTaskRequest(**req_data)
+    prepared.platform = str(prepared.platform or "").strip().lower()
+
+    if not is_platform_enabled(prepared.platform):
+        raise HTTPException(400, f"{prepared.platform} 平台已下线，不再支持注册")
 
     mail_provider = prepared.extra.get("mail_provider") or config_store.get(
         "mail_provider", ""
@@ -282,7 +287,6 @@ def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
             raise HTTPException(400, f"LuckMail 渠道暂时不支持 {platform} 项目注册")
 
         mapping = {
-            "trae": "trae",
             "cursor": "cursor",
             "grok": "grok",
             "kiro": "kiro",

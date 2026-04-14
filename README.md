@@ -8,6 +8,12 @@
 
 > ⚠️ 免责声明：本项目仅供学习与研究使用，不得用于任何商业用途。使用本项目所产生的一切后果由使用者自行承担。
 
+<p align="center">
+  <a href="README.md">中文</a> |
+  <a href="README_en.md">English</a> |
+  <a href="README_vi.md">Tiếng Việt</a>
+</p>
+
 多平台账号自动注册与管理系统，支持插件化扩展、Web UI 管理、批量注册、状态同步，以及本地 Turnstile Solver 自动拉起。
 
 ## 目录

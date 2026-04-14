@@ -139,7 +139,7 @@ export default function TaskHistory() {
             style={{ width: 120 }}
             options={[
               { value: '', label: '全部平台' },
-              { value: 'trae', label: 'Trae' },
+              { value: 'chatgpt', label: 'ChatGPT' },
               { value: 'cursor', label: 'Cursor' },
             ]}
           />

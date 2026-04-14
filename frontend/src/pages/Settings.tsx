@@ -648,7 +648,7 @@ function ConfigField({ field }: { field: FieldConfig }) {
   const isBooleanField = field.type === 'boolean'
   const helpText =
     field.key === 'default_executor'
-      ? '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、Tavily、Trae 支持浏览器模式，OpenBlockLabs 仅支持纯协议。'
+      ? '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、Tavily 支持浏览器模式，OpenBlockLabs 仅支持纯协议。'
       : field.key === 'email_domain_rule_enabled'
       ? '仅 CF Worker 生效：开启后会校验域名级数，以及域名至少包含 2 个字母和 2 个数字。'
       : field.key === 'email_domain_level_count'
@@ -981,6 +981,8 @@ function IntegrationsPanel() {
         title={resultModal.title}
         onCancel={() => setResultModal((v) => ({ ...v, open: false }))}
         onOk={() => setResultModal((v) => ({ ...v, open: false }))}
+        okText="确定"
+        cancelText="取消"
         width={760}
       >
         <Typography.Paragraph style={{ marginBottom: 8, color: resultModal.ok ? '#10b981' : '#ef4444' }}>

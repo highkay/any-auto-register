@@ -43,7 +43,6 @@ interface TaskSnapshot {
 
 const PLATFORM_LABELS: Record<string, string> = {
   chatgpt: 'ChatGPT',
-  trae: 'Trae',
   cursor: 'Cursor',
   grok: 'Grok',
   kiro: 'Kiro',
