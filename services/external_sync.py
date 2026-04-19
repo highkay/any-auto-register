@@ -234,4 +234,65 @@ def sync_account(account) -> list[dict[str, Any]]:
             ok, msg = upload_to_kiro_manager(account, path=configured_path or None)
             results.append({"name": "Kiro Manager", "ok": ok, "msg": msg})
 
+    elif platform == "qwen":
+        qwen_cpa_url = str(config_store.get("qwen_cpa_api_url", "") or "").strip()
+        if not qwen_cpa_url:
+            qwen_cpa_url = str(config_store.get("cpa_api_url", "") or "").strip()
+        qwen_cpa_enabled = _is_config_enabled(
+            config_store.get("qwen_cpa_enabled", ""),
+            default=bool(qwen_cpa_url),
+        )
+        if qwen_cpa_enabled and qwen_cpa_url:
+            from platforms.qwen.cpa_upload import generate_token_json, upload_to_cpa
+
+            class _QwenAccount:
+                pass
+
+            qwen_account = _QwenAccount()
+            qwen_account.email = account.email
+            # 支持 AccountModel (extra_json) 和 Account (extra) 两种格式
+            extra = {}
+            if hasattr(account, "extra"):
+                extra = account.extra or {}
+            elif hasattr(account, "get_extra"):
+                extra = account.get_extra() or {}
+            elif hasattr(account, "extra_json"):
+                import json
+                try:
+                    extra = json.loads(account.extra_json or "{}")
+                except Exception:
+                    extra = {}
+            qwen_account.access_token = _pick_text(
+                extra,
+                "oauth_access_token",
+                "qwen_oauth_access_token",
+                "access_token",
+            ) or account.token
+            qwen_account.refresh_token = _pick_text(
+                extra,
+                "refresh_token",
+                "qwen_refresh_token",
+            )
+            qwen_account.resource_url = _pick_text(
+                extra,
+                "resource_url",
+                "qwen_resource_url",
+                default="portal.qwen.ai",
+            )
+
+            if not qwen_account.refresh_token:
+                msg = "Qwen 账号缺少 refresh_token，无法同步到 CPA"
+                results.append({"name": "Qwen CPA", "ok": False, "msg": msg})
+            else:
+                token_data = generate_token_json(qwen_account)
+                qwen_cpa_key = str(config_store.get("qwen_cpa_api_key", "") or "").strip()
+                if not qwen_cpa_key:
+                    qwen_cpa_key = str(config_store.get("cpa_api_key", "") or "").strip()
+                ok, msg = upload_to_cpa(
+                    token_data,
+                    api_url=qwen_cpa_url,
+                    api_key=qwen_cpa_key or None,
+                )
+                results.append({"name": "Qwen CPA", "ok": ok, "msg": msg})
+
     return results

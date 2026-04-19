@@ -298,6 +298,7 @@ export default function RegisterTaskPage() {
                 { value: 'grok', label: 'Grok' },
                 { value: 'tavily', label: 'Tavily' },
                 { value: 'openblocklabs', label: 'OpenBlockLabs' },
+                { value: 'qwen', label: 'Qwen' },
               ]}
             />
           </Form.Item>

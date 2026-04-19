@@ -75,7 +75,7 @@ def _apply_action_result(
         from datetime import datetime, timezone
         acc_model.updated_at = datetime.now(timezone.utc)
         session.add(acc_model)
-    if platform == "chatgpt" and action_id == "upload_cpa":
+    if action_id == "upload_cpa":
         from services.chatgpt_sync import update_account_model_cpa_sync
 
         sync_msg = result.get("data") or result.get("error") or ""
