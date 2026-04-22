@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 import unittest
@@ -13,7 +14,6 @@ smstome_tool_stub.wait_for_otp = lambda *args, **kwargs: None
 sys.modules.setdefault("smstome_tool", smstome_tool_stub)
 
 from platforms.chatgpt.oauth_client import OAuthClient
-from platforms.chatgpt.chatgpt_client import ChatGPTClient
 from platforms.chatgpt.refresh_token_registration_engine import (
     RefreshTokenRegistrationEngine,
 )
@@ -36,29 +36,33 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
             email_service=DummyEmailService(),
             proxy_url="http://127.0.0.1:7890",
             callback_logger=lambda msg: None,
-            max_retries=1,
             **kwargs,
         )
 
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthManager")
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthClient")
-    def test_run_uses_oauth_single_chain_signup_main_chain(
+    @mock.patch("platforms.chatgpt.refresh_token_registration_engine.ChatGPTClient")
+    def test_run_uses_new_register_then_passwordless_oauth_main_chain(
         self,
+        mock_chatgpt_client_cls,
         mock_oauth_client_cls,
         mock_oauth_manager_cls,
     ):
+        register_client = mock.Mock()
+        register_client.device_id = "device-fixed"
+        register_client.ua = "UA"
+        register_client.sec_ch_ua = '"Chromium";v="136"'
+        register_client.impersonate = "chrome136"
+        register_client.register_complete_flow.return_value = (True, "注册成功")
+        mock_chatgpt_client_cls.return_value = register_client
+
         oauth_client = mock.Mock()
-        oauth_client.device_id = "device-fixed"
-        oauth_client.ua = "UA"
-        oauth_client.sec_ch_ua = '"Chromium";v="136"'
-        oauth_client.impersonate = "chrome136"
-        oauth_client.signup_and_get_tokens.return_value = {
+        oauth_client.login_and_get_tokens.return_value = {
             "access_token": "at",
             "refresh_token": "rt",
             "id_token": "id-token",
             "account_id": "acct-1",
         }
-        oauth_client.last_error = ""
         oauth_client.last_workspace_id = "ws-1"
         oauth_client._decode_oauth_session_cookie.return_value = {
             "workspaces": [{"id": "ws-1"}]
@@ -84,29 +88,39 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
         self.assertEqual(result.session_token, "session-1")
         self.assertEqual(result.source, "register")
 
-        oauth_client.signup_and_get_tokens.assert_called_once()
-        oauth_client.login_and_get_tokens.assert_not_called()
-        signup_args = oauth_client.signup_and_get_tokens.call_args.args
-        self.assertEqual(signup_args[0], "user@example.com")
-        self.assertEqual(signup_args[1], result.password)
-        signup_kwargs = oauth_client.signup_and_get_tokens.call_args.kwargs
-        self.assertFalse(signup_kwargs["allow_phone_verification"])
-        self.assertEqual(signup_kwargs["signup_source"], "refresh_token_engine")
+        register_client.register_complete_flow.assert_called_once()
+        oauth_client.login_and_get_tokens.assert_called_once()
+        register_kwargs = register_client.register_complete_flow.call_args.kwargs
+        self.assertTrue(register_kwargs["stop_before_about_you_submission"])
+        login_kwargs = oauth_client.login_and_get_tokens.call_args.kwargs
+        self.assertTrue(login_kwargs["prefer_passwordless_login"])
+        self.assertFalse(login_kwargs["allow_phone_verification"])
+        self.assertTrue(login_kwargs["complete_about_you_if_needed"])
+        self.assertTrue(login_kwargs["force_new_browser"])
+        self.assertEqual(login_kwargs["device_id"], "")
+        self.assertEqual(login_kwargs["login_source"], "post_register_workspace_recovery")
 
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthManager")
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthClient")
-    def test_run_switches_to_login_when_signup_reports_existing_account(
+    @mock.patch("platforms.chatgpt.refresh_token_registration_engine.ChatGPTClient")
+    def test_run_switches_to_login_when_register_flow_reports_existing_account(
         self,
+        mock_chatgpt_client_cls,
         mock_oauth_client_cls,
         mock_oauth_manager_cls,
     ):
+        register_client = mock.Mock()
+        register_client.device_id = "device-fixed"
+        register_client.ua = "UA"
+        register_client.sec_ch_ua = '"Chromium";v="136"'
+        register_client.impersonate = "chrome136"
+        register_client.register_complete_flow.return_value = (
+            False,
+            "创建账号失败: HTTP 400: user_already_exists",
+        )
+        mock_chatgpt_client_cls.return_value = register_client
+
         oauth_client = mock.Mock()
-        oauth_client.device_id = "device-fixed"
-        oauth_client.ua = "UA"
-        oauth_client.sec_ch_ua = '"Chromium";v="136"'
-        oauth_client.impersonate = "chrome136"
-        oauth_client.signup_and_get_tokens.return_value = None
-        oauth_client.last_error = "注册失败: 400 - user_already_exists"
         oauth_client.login_and_get_tokens.return_value = {
             "access_token": "at",
             "refresh_token": "rt",
@@ -132,16 +146,15 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.source, "login")
         self.assertEqual(result.account_id, "acct-existing")
-        oauth_client.signup_and_get_tokens.assert_called_once()
         login_kwargs = oauth_client.login_and_get_tokens.call_args.kwargs
-        self.assertEqual(login_kwargs["login_source"], "existing_account_continue")
-        self.assertTrue(login_kwargs["force_new_browser"])
-        self.assertEqual(login_kwargs["user_agent"], "UA")
+        self.assertEqual(login_kwargs["login_source"], "existing_account_recovery")
 
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthManager")
     @mock.patch("platforms.chatgpt.refresh_token_registration_engine.OAuthClient")
-    def test_run_retry_uses_newly_created_email_in_next_attempt(
+    @mock.patch("platforms.chatgpt.refresh_token_registration_engine.ChatGPTClient")
+    def test_run_disables_full_flow_retry_even_if_max_retries_is_large(
         self,
+        mock_chatgpt_client_cls,
         mock_oauth_client_cls,
         mock_oauth_manager_cls,
     ):
@@ -161,33 +174,18 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
             def get_verification_code(self, **kwargs):
                 return "123456"
 
+        register_client = mock.Mock()
+        register_client.device_id = "device-fixed"
+        register_client.ua = "UA"
+        register_client.sec_ch_ua = '"Chromium";v="136"'
+        register_client.impersonate = "chrome136"
+        register_client.register_complete_flow.side_effect = [
+            (False, "network timeout"),
+            (True, "注册成功"),
+        ]
+        mock_chatgpt_client_cls.return_value = register_client
+
         oauth_client = mock.Mock()
-        oauth_client.device_id = "device-fixed"
-        oauth_client.ua = "UA"
-        oauth_client.sec_ch_ua = '"Chromium";v="136"'
-        oauth_client.impersonate = "chrome136"
-        oauth_client.last_error = ""
-        signup_results = iter(
-            [
-                (None, "network timeout"),
-                (
-                    {
-                        "access_token": "at",
-                        "refresh_token": "rt",
-                        "id_token": "id-token",
-                        "account_id": "acct-1",
-                    },
-                    "",
-                ),
-            ]
-        )
-
-        def _signup_side_effect(*args, **kwargs):
-            result_value, error_value = next(signup_results)
-            oauth_client.last_error = error_value
-            return result_value
-
-        oauth_client.signup_and_get_tokens.side_effect = _signup_side_effect
         oauth_client.login_and_get_tokens.return_value = {
             "access_token": "at",
             "refresh_token": "rt",
@@ -212,54 +210,19 @@ class RefreshTokenRegistrationEngineTests(unittest.TestCase):
             email_service=RotatingEmailService(),
             proxy_url="http://127.0.0.1:7890",
             callback_logger=lambda msg: None,
-            max_retries=2,
         )
         result = engine.run()
 
-        self.assertTrue(result.success)
-        call_args = oauth_client.signup_and_get_tokens.call_args_list
+        self.assertFalse(result.success)
+        self.assertIn("注册状态机失败", result.error_message)
+        call_args = register_client.register_complete_flow.call_args_list
         self.assertEqual(call_args[0].args[0], "user1@example.com")
-        self.assertEqual(call_args[1].args[0], "user2@example.com")
+        self.assertEqual(len(call_args), 1)
 
 
 class OAuthClientPasswordlessTests(unittest.TestCase):
     def _make_client(self):
         return OAuthClient({}, proxy="http://127.0.0.1:7890", verbose=False)
-
-    def test_submit_signup_register_uses_minimal_headers_strategy(self):
-        client = self._make_client()
-        client.session.post = mock.Mock(
-            return_value=mock.Mock(status_code=200, url="https://auth.openai.com/api/accounts/user/register")
-        )
-
-        with mock.patch(
-            "platforms.chatgpt.oauth_client.get_sentinel_token_via_browser",
-            return_value="sentinel-demo",
-        ), mock.patch(
-            "platforms.chatgpt.oauth_client.build_sentinel_token",
-            return_value="",
-        ):
-            ok = client._submit_signup_register(
-                "user@example.com",
-                "Secret123!",
-                "device-fixed",
-                user_agent="UA",
-                sec_ch_ua='"Chromium";v="136"',
-                impersonate="chrome136",
-                referer="https://auth.openai.com/create-account/password",
-            )
-
-        self.assertTrue(ok)
-        kwargs = client.session.post.call_args.kwargs
-        self.assertIn("data", kwargs)
-        self.assertNotIn("json", kwargs)
-        headers = kwargs["headers"]
-        self.assertEqual(headers["Referer"], "https://auth.openai.com/create-account/password")
-        self.assertEqual(headers["Content-Type"], "application/json")
-        self.assertEqual(headers["Accept"], "application/json")
-        self.assertEqual(headers["openai-sentinel-token"], "sentinel-demo")
-        self.assertNotIn("Origin", headers)
-        self.assertNotIn("oai-device-id", headers)
 
     def test_login_and_get_tokens_prefers_passwordless_over_password_verify(self):
         client = self._make_client()
@@ -303,6 +266,32 @@ class OAuthClientPasswordlessTests(unittest.TestCase):
         self.assertEqual(submit_continue.call_args.kwargs["screen_hint"], "login")
         send_passwordless.assert_called_once()
         submit_password.assert_not_called()
+
+    def test_build_sentinel_token_for_flow_syncs_device_id_from_token(self):
+        client = self._make_client()
+        client.device_id = "did-old"
+        token = json.dumps(
+            {
+                "p": "gAAAAAB-test",
+                "t": "ok",
+                "c": "challenge",
+                "id": "did-new",
+                "flow": "authorize_continue",
+            },
+            separators=(",", ":"),
+        )
+
+        with mock.patch(
+            "platforms.chatgpt.oauth_client.build_sentinel_token",
+            return_value=token,
+        ):
+            result = client._build_sentinel_token_for_flow(
+                flow="authorize_continue",
+                device_id="did-old",
+            )
+
+        self.assertEqual(result, token)
+        self.assertEqual(client.device_id, "did-new")
 
     def test_login_and_get_tokens_visits_add_phone_continue_url_before_phone_branch(self):
         client = self._make_client()
@@ -365,7 +354,7 @@ class OAuthClientPasswordlessTests(unittest.TestCase):
             "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
         )
 
-    def test_login_and_get_tokens_retries_once_when_add_phone_has_no_workspace(self):
+    def test_login_and_get_tokens_fails_fast_when_add_phone_has_no_workspace(self):
         client = self._make_client()
         add_phone_state = FlowState(
             page_type="add_phone",
@@ -387,8 +376,8 @@ class OAuthClientPasswordlessTests(unittest.TestCase):
             )
 
         self.assertIsNone(tokens)
-        self.assertEqual(bootstrap.call_count, 2)
-        self.assertEqual(submit_continue.call_count, 2)
+        self.assertEqual(bootstrap.call_count, 1)
+        self.assertEqual(submit_continue.call_count, 1)
         self.assertIn("未获取到 workspace / callback", client.last_error)
 
     def test_send_passwordless_login_otp_does_not_send_email_field(self):
@@ -456,115 +445,25 @@ class OAuthClientPasswordlessTests(unittest.TestCase):
         self.assertEqual(submit_about_you.call_args.args[1], "Stone")
         self.assertEqual(submit_about_you.call_args.args[2], "1990-01-02")
 
-
-class BrowserFallbackTests(unittest.TestCase):
-    def test_chatgpt_create_account_uses_browser_fallback_on_challenge(self):
-        client = ChatGPTClient(proxy="http://127.0.0.1:7890", verbose=False, browser_mode="headless")
-        client._get_sentinel_token = mock.Mock(return_value="sentinel-token")
-        client._browser_submit_create_account = mock.Mock(
-            return_value=(
-                True,
-                FlowState(
-                    page_type="consent",
-                    continue_url="https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
-                    current_url="https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
-                ),
-            )
-        )
-
-        response = mock.Mock()
-        response.status_code = 403
-        response.text = "<!DOCTYPE html>Just a moment..."
-        response.url = "https://auth.openai.com/about-you"
-        client.session.post = mock.Mock(return_value=response)
-
-        ok, next_state = client.create_account("Ivy", "Stone", "1990-01-02", return_state=True)
-
-        self.assertTrue(ok)
-        self.assertEqual(next_state.page_type, "consent")
-        client._browser_submit_create_account.assert_called_once()
-
-    def test_chatgpt_create_account_protocol_mode_skips_browser_fallback(self):
-        client = ChatGPTClient(proxy="http://127.0.0.1:7890", verbose=False, browser_mode="protocol")
-        client._get_sentinel_token = mock.Mock(return_value="sentinel-token")
-        client._browser_submit_create_account = mock.Mock()
-
-        response = mock.Mock()
-        response.status_code = 403
-        response.text = "<!DOCTYPE html>Just a moment..."
-        response.url = "https://auth.openai.com/about-you"
-        response.json.side_effect = ValueError("not json")
-        client.session.post = mock.Mock(return_value=response)
-
-        ok, detail = client.create_account("Ivy", "Stone", "1990-01-02", return_state=True)
-
-        self.assertFalse(ok)
-        self.assertIn("HTTP 403", detail)
-        client._browser_submit_create_account.assert_not_called()
-
-    def test_load_workspace_session_data_uses_browser_warm_page_when_needed(self):
-        client = OAuthClient({}, proxy="http://127.0.0.1:7890", verbose=False, browser_mode="headless")
-        client._decode_oauth_session_cookie = mock.Mock(
-            side_effect=[
+    def test_oauth_submit_workspace_and_org_can_shortcut_by_consent_preflight_code(self):
+        client = self._make_client()
+        with mock.patch.object(
+            client,
+            "_oauth_follow_for_code",
+            return_value=("auth-code", "http://localhost:1455/auth/callback?code=auth-code"),
+        ), mock.patch.object(client, "_load_workspace_session_data") as load_session:
+            code, state = client._oauth_submit_workspace_and_org(
+                "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
+                "device-fixed",
+                "UA",
                 None,
-                {"workspaces": [{"id": "ws-1"}]},
-            ]
-        )
-        client._fetch_consent_page_html = mock.Mock(return_value="")
-        client._browser_warm_page = mock.Mock(
-            return_value={
-                "url": "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
-                "html": "<html></html>",
-            }
-        )
-
-        session_data = client._load_workspace_session_data(
-            "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
-            user_agent="UA",
-            impersonate="chrome136",
-        )
-
-        self.assertEqual(session_data["workspaces"][0]["id"], "ws-1")
-        client._browser_warm_page.assert_called_once()
-
-    def test_workspace_submit_falls_back_to_browser_callback_when_api_follow_has_no_code(self):
-        client = OAuthClient({}, proxy="http://127.0.0.1:7890", verbose=False, browser_mode="headless")
-        client._load_workspace_session_data = mock.Mock(
-            return_value={"workspaces": [{"id": "ws-1"}]}
-        )
-        client._oauth_follow_for_code = mock.Mock(return_value=(None, "https://auth.openai.com/sign-in-with-chatgpt/codex/consent"))
-        client._browser_capture_callback = mock.Mock(
-            return_value="http://localhost:1455/auth/callback?code=auth-code&state=demo"
-        )
-
-        response = mock.Mock()
-        response.status_code = 200
-        response.url = "https://auth.openai.com/api/accounts/workspace/select"
-        response.text = '{"continue_url":"https://auth.openai.com/sign-in-with-chatgpt/codex/consent"}'
-        response.json.return_value = {
-            "continue_url": "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
-            "page": {
-                "type": "consent",
-                "payload": {
-                    "url": "https://auth.openai.com/sign-in-with-chatgpt/codex/consent"
-                },
-            },
-            "data": {
-                "orgs": [],
-            },
-        }
-        client.session.post = mock.Mock(return_value=response)
-
-        code, state = client._oauth_submit_workspace_and_org(
-            "https://auth.openai.com/sign-in-with-chatgpt/codex/consent",
-            "device-fixed",
-            "UA",
-            "chrome136",
-        )
+                max_retries=1,
+                consent_referer="https://auth.openai.com/add-phone",
+            )
 
         self.assertEqual(code, "auth-code")
-        self.assertEqual(state.page_type, "oauth_callback")
-        client._browser_capture_callback.assert_called_once()
+        self.assertIsNotNone(state)
+        load_session.assert_not_called()
 
 
 if __name__ == "__main__":
