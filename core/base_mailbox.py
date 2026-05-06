@@ -27,6 +27,30 @@ class BaseMailbox(ABC):
         if callable(log_fn):
             log_fn(message)
 
+    def _provider_log_label(self) -> str:
+        label = str(getattr(self, "provider_label", "") or "").strip()
+        return label or self.__class__.__name__
+
+    @staticmethod
+    def _format_exception_for_log(error: Exception) -> str:
+        detail = str(error or "").strip()
+        if detail:
+            return f"{type(error).__name__}: {detail}"
+        return type(error).__name__
+
+    def _log_polling_exception_once(
+        self,
+        state: dict[str, str | None],
+        error: Exception,
+        *,
+        action: str = "拉取收件箱失败",
+    ) -> None:
+        summary = self._format_exception_for_log(error)
+        if state.get("last") == summary:
+            return
+        state["last"] = summary
+        self._log(f"[{self._provider_log_label()}] {action}: {summary}")
+
     def _checkpoint(self, *, consume_skip: bool = True) -> None:
         task_control = getattr(self, "_task_control", None)
         if task_control is None:
@@ -69,6 +93,38 @@ class BaseMailbox(ABC):
         self._checkpoint()
         raise TimeoutError(timeout_message or f"等待验证码超时 ({timeout_seconds}s)")
 
+    def _message_id_value(self, message: Any) -> str:
+        import hashlib
+
+        if isinstance(message, dict):
+            for key in ("id", "message_id", "uid", "mail_id", "_id"):
+                value = str(message.get(key) or "").strip()
+                if value:
+                    return value
+            raw = json.dumps(message, ensure_ascii=False, sort_keys=True)
+        else:
+            raw = str(message or "")
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _message_search_text(self, message: Any) -> str:
+        import html
+        import re
+
+        if isinstance(message, dict):
+            raw = json.dumps(message, ensure_ascii=False)
+        else:
+            raw = str(message or "")
+
+        text = re.sub(r"<[^>]+>", " ", raw)
+        text = html.unescape(text)
+        text = self._decode_raw_content(text) or text
+        text = re.sub(
+            r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+            "",
+            text,
+        )
+        return re.sub(r"\s+", " ", text).strip()
+
     @abstractmethod
     def get_email(self) -> MailboxAccount:
         """获取一个可用邮箱"""
@@ -102,9 +158,9 @@ class BaseMailbox(ABC):
         # 先匹配带明显语义的验证码，避免误提取 MIME boundary、时间戳等 6 位数字。
         patterns.extend(
             [
-                r"(?is)(?:verification\s+code|one[-\s]*time\s+(?:password|code)|security\s+code|login\s+code|验证码|校验码|动态码|認證碼|驗證碼)[^0-9]{0,30}(\d{6})",
-                r"(?is)\bcode\b[^0-9]{0,12}(\d{6})",
-                r"(?<!#)(?<!\d)(\d{6})(?!\d)",
+                r"(?is)(?:verification\s+code|one[-\s]*time\s+(?:password|code)|security\s+code|login\s+code|验证码|校验码|动态码|認證碼|驗證碼)[^0-9]{0,30}(\d{3}(?:[-\s]?\d{3}))",
+                r"(?is)\bcode\b[^0-9]{0,12}(\d{3}(?:[-\s]?\d{3}))",
+                r"(?<!#)(?<!\d)(\d{3}(?:[-\s]?\d{3}))(?!\d)",
             ]
         )
 
@@ -170,10 +226,10 @@ class BaseMailbox(ABC):
         # 先匹配带明显语义的验证码，避免误提取 MIME boundary、时间戳等 6 位数字。
         patterns.extend(
             [
-                r"(?is)(?:verification\s+code|one[-\s]*time\s+(?:password|code)|security\s+code|login\s+code|验证码|校验码|动态码|認證碼|驗證碼)[^0-9]{0,30}(\d{6})",
-                r"(?is)\bcode\b[^0-9]{0,12}(\d{6})",
+                r"(?is)(?:verification\s+code|one[-\s]*time\s+(?:password|code)|security\s+code|login\s+code|验证码|校验码|动态码|認證碼|驗證碼)[^0-9]{0,30}(\d{3}(?:[-\s]?\d{3}))",
+                r"(?is)\bcode\b[^0-9]{0,12}(\d{3}(?:[-\s]?\d{3}))",
                 # [修复点 3]：修改兜底正则，严格要求 6 位数字前后不能有字母或数字（防止匹配 u20216706）
-                r"(?<![a-zA-Z0-9])(\d{6})(?![a-zA-Z0-9])",
+                r"(?<![a-zA-Z0-9])(\d{3}(?:[-\s]?\d{3}))(?![a-zA-Z0-9])",
             ]
         )
 
@@ -295,6 +351,37 @@ def create_mailbox(
             api_key=extra.get("gptmail_api_key", ""),
             domain=extra.get("gptmail_domain", ""),
             mode=extra.get("gptmail_mode", "api"),
+            proxy=proxy,
+        )
+    elif provider == "edumail":
+        return EduMailMailbox(
+            api_url=extra.get("edumail_base_url", "https://edumail.su"),
+            domain=extra.get("edumail_domain", ""),
+            proxy=proxy,
+        )
+    elif provider == "imail":
+        return ImailMailbox(
+            api_url=extra.get("imail_base_url", "https://imail.edu.vn"),
+            domain=extra.get("imail_domain", ""),
+            proxy=proxy,
+        )
+    elif provider == "edumaili":
+        return EduMailiMailbox(
+            api_url=extra.get("edumaili_base_url", "https://edumaili.com"),
+            domain=extra.get("edumaili_domain", ""),
+            proxy=proxy,
+        )
+    elif provider == "boomlify":
+        return BoomlifyMailbox(
+            api_url=extra.get("boomlify_base_url", "https://boomlify.com/en/edu-temp-mail"),
+            api_base=extra.get("boomlify_api_base", "https://v1.boomlify.com"),
+            domain=extra.get("boomlify_domain", ""),
+            proxy=proxy,
+        )
+    elif provider == "nullsto":
+        return NullstoMailbox(
+            api_url=extra.get("nullsto_base_url", "https://nullsto.edu.pl"),
+            domain=extra.get("nullsto_domain", ""),
             proxy=proxy,
         )
     elif provider == "applemail":
@@ -2075,6 +2162,424 @@ class GPTMailMailbox(BaseMailbox):
         )
 
 
+class EduMailMailbox(BaseMailbox):
+    """EduMail.su 随机 .edu 邮箱服务"""
+
+    provider_key = "edumail"
+    provider_label = "EduMail"
+    default_api_url = "https://edumail.su"
+
+    def __init__(
+        self,
+        api_url: str = "https://edumail.su",
+        domain: str = "",
+        proxy: str = None,
+    ):
+        self.api = (api_url or self.default_api_url).rstrip("/")
+        self.domain = str(domain or "").strip().lower().lstrip("@")
+        self.proxy = build_mailbox_proxy_config(proxy)
+        self._proxy_url = None
+        self._email = None
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from .edumail_client import EduMailSessionClient
+
+            self._client = EduMailSessionClient(base_url=self.api)
+        return self._client
+
+    @staticmethod
+    def _resolve_message_id(message: dict[str, Any]) -> str:
+        import hashlib
+
+        for key in ("id", "message_id", "uid", "mail_id", "_id"):
+            value = str(message.get(key) or "").strip()
+            if value:
+                return value
+
+        raw = json.dumps(message, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def get_email(self) -> MailboxAccount:
+        email = self._get_client().generate_random_email(domain=self.domain)
+        self._email = email
+        self._log(f"[{self.provider_label}] 生成邮箱: {email}")
+        return MailboxAccount(
+            email=email,
+            account_id=email,
+            extra={"provider": self.provider_key, "domain": self.domain or ""},
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        try:
+            return {
+                self._resolve_message_id(message)
+                for message in self._get_client().get_messages(account.email)
+                if self._resolve_message_id(message)
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        import html
+        import re
+
+        seen = {str(mid) for mid in (before_ids or set())}
+        exclude_codes = {
+            str(code).strip()
+            for code in (kwargs.get("exclude_codes") or set())
+            if str(code or "").strip()
+        }
+        last_poll_error = {"last": None}
+
+        def poll_once() -> Optional[str]:
+            try:
+                messages = self._get_client().get_messages(account.email)
+                last_poll_error["last"] = None
+                for message in messages:
+                    message_id = self._resolve_message_id(message)
+                    if not message_id or message_id in seen:
+                        continue
+                    seen.add(message_id)
+
+                    search_text = " ".join(
+                        [
+                            str(message.get("subject") or ""),
+                            str(message.get("sender_name") or ""),
+                            str(message.get("sender_email") or ""),
+                            str(message.get("date") or ""),
+                            str(message.get("datediff") or ""),
+                            str(message.get("content") or ""),
+                        ]
+                    ).strip()
+                    search_text = re.sub(r"<[^>]+>", " ", search_text)
+                    search_text = html.unescape(search_text)
+                    search_text = self._decode_raw_content(search_text) or search_text
+                    search_text = re.sub(
+                        r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+                        "",
+                        search_text,
+                    )
+                    if keyword and keyword.lower() not in search_text.lower():
+                        continue
+
+                    code = self._safe_extract(search_text, code_pattern)
+                    if code and code in exclude_codes:
+                        continue
+                    if code:
+                        self._log(f"[{self.provider_label}] 收到验证码: {code}")
+                        return code
+            except Exception as e:
+                self._log_polling_exception_once(last_poll_error, e)
+            return None
+
+        return self._run_polling_wait(
+            timeout=timeout,
+            poll_interval=3,
+            poll_once=poll_once,
+        )
+
+
+class ImailMailbox(EduMailMailbox):
+    """Imail.edu.vn 随机教育邮箱服务"""
+
+    provider_key = "imail"
+    provider_label = "IMail"
+    default_api_url = "https://imail.edu.vn"
+    DEFAULT_BLOCKED_DOMAINS = {"apple.edu.pl", "imail.edu.vn"}
+
+    def __init__(
+        self,
+        api_url: str = "https://imail.edu.vn",
+        domain: str = "",
+        proxy: str = None,
+    ):
+        super().__init__(api_url=api_url or self.default_api_url, domain=domain, proxy=proxy)
+
+    def get_email(self) -> MailboxAccount:
+        blocked_domains = set() if self.domain else set(self.DEFAULT_BLOCKED_DOMAINS)
+        email = self._get_client().generate_random_email(
+            domain=self.domain,
+            blocked_domains=blocked_domains,
+        )
+        self._email = email
+        self._log(f"[{self.provider_label}] 生成邮箱: {email}")
+        return MailboxAccount(
+            email=email,
+            account_id=email,
+            extra={"provider": self.provider_key, "domain": self.domain or ""},
+        )
+
+
+class EduMailiMailbox(BaseMailbox):
+    """Edumaili.com 网页邮箱服务"""
+
+    provider_label = "EduMaili"
+
+    def __init__(
+        self,
+        api_url: str = "https://edumaili.com",
+        domain: str = "",
+        proxy: str = None,
+    ):
+        self.api = (api_url or "https://edumaili.com").rstrip("/")
+        self.domain = str(domain or "").strip().lower().lstrip("@")
+        self.proxy = build_mailbox_proxy_config(proxy)
+        self._proxy_url = None
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from .web_mailbox_clients import EduMailiSessionClient
+
+            self._client = EduMailiSessionClient(base_url=self.api)
+        return self._client
+
+    def get_email(self) -> MailboxAccount:
+        email = self._get_client().generate_random_email(domain=self.domain)
+        self._log(f"[{self.provider_label}] 生成邮箱: {email}")
+        return MailboxAccount(
+            email=email,
+            account_id=email,
+            extra={"provider": "edumaili", "domain": self.domain or ""},
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        try:
+            return {
+                self._message_id_value(message)
+                for message in self._get_client().get_messages(account.email)
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        seen = {str(mid) for mid in (before_ids or set())}
+        exclude_codes = {
+            str(code).strip()
+            for code in (kwargs.get("exclude_codes") or set())
+            if str(code or "").strip()
+        }
+        last_poll_error = {"last": None}
+
+        def poll_once() -> Optional[str]:
+            try:
+                messages = self._get_client().get_messages(account.email)
+                last_poll_error["last"] = None
+                for message in messages:
+                    message_id = self._message_id_value(message)
+                    if not message_id or message_id in seen:
+                        continue
+                    seen.add(message_id)
+
+                    search_text = self._message_search_text(message)
+                    if keyword and keyword.lower() not in search_text.lower():
+                        continue
+
+                    code = self._safe_extract(search_text, code_pattern)
+                    if code and code in exclude_codes:
+                        continue
+                    if code:
+                        self._log(f"[{self.provider_label}] 收到验证码: {code}")
+                        return code
+            except Exception as e:
+                self._log_polling_exception_once(last_poll_error, e)
+            return None
+
+        return self._run_polling_wait(timeout=timeout, poll_interval=3, poll_once=poll_once)
+
+
+class BoomlifyMailbox(BaseMailbox):
+    """Boomlify Edu Temp Mail 公共 API 服务"""
+
+    provider_label = "Boomlify"
+
+    def __init__(
+        self,
+        api_url: str = "https://boomlify.com/en/edu-temp-mail",
+        api_base: str = "https://v1.boomlify.com",
+        domain: str = "",
+        proxy: str = None,
+    ):
+        self.api = (api_url or "https://boomlify.com/en/edu-temp-mail").rstrip("/")
+        self.api_base = (api_base or "https://v1.boomlify.com").rstrip("/")
+        self.domain = str(domain or "").strip().lower().lstrip("@")
+        self.proxy = build_mailbox_proxy_config(proxy)
+        self._proxy_url = None
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from .web_mailbox_clients import BoomlifySessionClient
+
+            self._client = BoomlifySessionClient(api_base=self.api_base)
+        return self._client
+
+    def get_email(self) -> MailboxAccount:
+        email = self._get_client().generate_random_email(domain=self.domain)
+        self._log(f"[{self.provider_label}] 生成邮箱: {email}")
+        return MailboxAccount(
+            email=email,
+            account_id=email,
+            extra={"provider": "boomlify", "domain": self.domain or ""},
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        try:
+            return {
+                self._message_id_value(message)
+                for message in self._get_client().get_messages(account.email)
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        seen = {str(mid) for mid in (before_ids or set())}
+        exclude_codes = {
+            str(code).strip()
+            for code in (kwargs.get("exclude_codes") or set())
+            if str(code or "").strip()
+        }
+        last_poll_error = {"last": None}
+
+        def poll_once() -> Optional[str]:
+            try:
+                messages = self._get_client().get_messages(account.email)
+                last_poll_error["last"] = None
+                for message in messages:
+                    message_id = self._message_id_value(message)
+                    if not message_id or message_id in seen:
+                        continue
+                    seen.add(message_id)
+
+                    search_text = self._message_search_text(message)
+                    if keyword and keyword.lower() not in search_text.lower():
+                        continue
+
+                    code = self._safe_extract(search_text, code_pattern)
+                    if code and code in exclude_codes:
+                        continue
+                    if code:
+                        self._log(f"[{self.provider_label}] 收到验证码: {code}")
+                        return code
+            except Exception as e:
+                self._log_polling_exception_once(last_poll_error, e)
+            return None
+
+        return self._run_polling_wait(timeout=timeout, poll_interval=3, poll_once=poll_once)
+
+
+class NullstoMailbox(BaseMailbox):
+    """Nullsto Supabase 临时邮箱服务"""
+
+    provider_label = "Nullsto"
+
+    def __init__(
+        self,
+        api_url: str = "https://nullsto.edu.pl",
+        domain: str = "",
+        proxy: str = None,
+    ):
+        self.api = (api_url or "https://nullsto.edu.pl").rstrip("/")
+        self.domain = str(domain or "").strip().lower().lstrip("@")
+        self.proxy = build_mailbox_proxy_config(proxy)
+        self._proxy_url = None
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            from .web_mailbox_clients import NullstoSessionClient
+
+            self._client = NullstoSessionClient(base_url=self.api)
+        return self._client
+
+    def get_email(self) -> MailboxAccount:
+        email = self._get_client().generate_random_email(domain=self.domain)
+        self._log(f"[{self.provider_label}] 生成邮箱: {email}")
+        return MailboxAccount(
+            email=email,
+            account_id=email,
+            extra={"provider": "nullsto", "domain": self.domain or ""},
+        )
+
+    def get_current_ids(self, account: MailboxAccount) -> set:
+        try:
+            return {
+                self._message_id_value(message)
+                for message in self._get_client().get_messages(account.email)
+            }
+        except Exception:
+            return set()
+
+    def wait_for_code(
+        self,
+        account: MailboxAccount,
+        keyword: str = "",
+        timeout: int = 120,
+        before_ids: set = None,
+        code_pattern: str = None,
+        **kwargs,
+    ) -> str:
+        seen = {str(mid) for mid in (before_ids or set())}
+        exclude_codes = {
+            str(code).strip()
+            for code in (kwargs.get("exclude_codes") or set())
+            if str(code or "").strip()
+        }
+        last_poll_error = {"last": None}
+
+        def poll_once() -> Optional[str]:
+            try:
+                messages = self._get_client().get_messages(account.email)
+                last_poll_error["last"] = None
+                for message in messages:
+                    message_id = self._message_id_value(message)
+                    if not message_id or message_id in seen:
+                        continue
+                    seen.add(message_id)
+
+                    search_text = self._message_search_text(message)
+                    if keyword and keyword.lower() not in search_text.lower():
+                        continue
+
+                    code = self._safe_extract(search_text, code_pattern)
+                    if code and code in exclude_codes:
+                        continue
+                    if code:
+                        self._log(f"[{self.provider_label}] 收到验证码: {code}")
+                        return code
+            except Exception as e:
+                self._log_polling_exception_once(last_poll_error, e)
+            return None
+
+        return self._run_polling_wait(timeout=timeout, poll_interval=3, poll_once=poll_once)
+
+
 class OpenTrashMailMailbox(BaseMailbox):
     """OpenTrashMail 临时邮箱服务"""
 
@@ -2934,15 +3439,37 @@ class CFWorkerMailbox(BaseMailbox):
         import requests
 
         url = f"{self.api}{path}"
-        response = requests.request(
-            method,
-            url,
-            params=params,
-            json=payload,
-            headers=self._headers(),
-            proxies=self.proxy,
-            timeout=timeout,
+        response = None
+        last_error = None
+        transient_errors = (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.SSLError,
         )
+        for attempt in range(1, 4):
+            self._checkpoint()
+            try:
+                response = requests.request(
+                    method,
+                    url,
+                    params=params,
+                    json=payload,
+                    headers=self._headers(),
+                    proxies=self.proxy,
+                    timeout=timeout,
+                )
+                break
+            except transient_errors as exc:
+                last_error = exc
+                if attempt >= 3:
+                    raise
+                self._log(
+                    f"[CFWorker] {path} 第 {attempt} 次请求失败，准备重试: {exc}"
+                )
+                self._sleep_with_checkpoint(0.5 * attempt)
+
+        if response is None:
+            raise last_error or RuntimeError(f"CFWorker API {path} 请求失败")
         body = (response.text or "").strip()
         preview = body[:200] or "<empty>"
 
@@ -3082,30 +3609,45 @@ class CFWorkerMailbox(BaseMailbox):
 
     def get_email(self) -> MailboxAccount:
         self._ensure_api_configured()
-        name = self._generate_local_part()
-        payload = {"enablePrefix": True, "name": name}
         selected_domain = self._compose_domain(self._pick_domain())
-        if selected_domain:
-            payload["domain"] = selected_domain
-            self._log(f"[CFWorker] 本次使用域名: {selected_domain}")
-        data = self._request_json(
-            "POST", "/admin/new_address", payload=payload, timeout=15
-        )
-        email = data.get("email", data.get("address", ""))
-        token = data.get("token", data.get("jwt", ""))
-        if not email or not token:
-            raise RuntimeError(
-                f"CFWorker API /admin/new_address 返回缺少 email/jwt: {data}"
+        for attempt in range(1, 6):
+            name = self._generate_local_part()
+            payload = {"enablePrefix": True, "name": name}
+            if selected_domain:
+                payload["domain"] = selected_domain
+                self._log(f"[CFWorker] 本次使用域名: {selected_domain}")
+            try:
+                data = self._request_json(
+                    "POST", "/admin/new_address", payload=payload, timeout=15
+                )
+            except RuntimeError as exc:
+                if (
+                    attempt < 5
+                    and "address already exists" in str(exc).strip().lower()
+                ):
+                    self._log(
+                        f"[CFWorker] 地址已存在，重新生成 local-part 重试 {attempt + 1}/5"
+                    )
+                    continue
+                raise
+
+            email = data.get("email", data.get("address", ""))
+            token = data.get("token", data.get("jwt", ""))
+            if not email or not token:
+                raise RuntimeError(
+                    f"CFWorker API /admin/new_address 返回缺少 email/jwt: {data}"
+                )
+            self._token = token
+            print(
+                f"[CFWorker] 生成邮箱: {email} token={token[:40] if token else 'NONE'}..."
             )
-        self._token = token
-        print(
-            f"[CFWorker] 生成邮箱: {email} token={token[:40] if token else 'NONE'}..."
-        )
-        return MailboxAccount(
-            email=email,
-            account_id=token,
-            extra={"cfworker_domain": selected_domain} if selected_domain else None,
-        )
+            return MailboxAccount(
+                email=email,
+                account_id=token,
+                extra={"cfworker_domain": selected_domain} if selected_domain else None,
+            )
+
+        raise RuntimeError("CFWorker 生成邮箱失败")
 
     def _get_mails(self, email: str) -> list:
         self._ensure_api_configured()

@@ -5,9 +5,18 @@ from services.external_sync import sync_account
 
 
 class DummyAccount:
-    def __init__(self, *, platform="chatgpt", email="demo@example.com", token="at-token", extra=None):
+    def __init__(
+        self,
+        *,
+        platform="chatgpt",
+        email="demo@example.com",
+        password="demo-password",
+        token="at-token",
+        extra=None,
+    ):
         self.platform = platform
         self.email = email
+        self.password = password
         self.token = token
         self.extra = dict(extra or {})
         self.id = None
@@ -178,6 +187,125 @@ class ExternalSyncContributionModeTests(unittest.TestCase):
         with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
             with mock.patch("platforms.chatgpt.sub2api_upload.upload_to_sub2api") as upload_mock:
                 with mock.patch("services.external_sync.persist_sub2api_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(result, [])
+        upload_mock.assert_not_called()
+        persist_mock.assert_not_called()
+
+    def test_nvidia_gpt_load_enabled_uploads_and_persists_sync_status(self):
+        account = DummyAccount(platform="nvidia", token="nv-key", extra={"api_key": "nv-key"})
+        cfg = {
+            "gpt_load_enabled": "1",
+            "gpt_load_url": "http://gpt-load.local",
+            "gpt_load_admin_key": "sk-admin",
+            "gpt_load_group_name": "nvidia",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch(
+                "services.external_sync.upload_nvidia_account_to_gpt_load",
+                return_value=(True, "ok", {"group_name": "nvidia"}),
+            ) as upload_mock:
+                with mock.patch("services.external_sync.persist_gpt_load_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "gpt-load")
+        self.assertTrue(result[0]["ok"])
+        upload_mock.assert_called_once_with(
+            account,
+            api_url="http://gpt-load.local",
+            api_key="sk-admin",
+            group_name="nvidia",
+        )
+        persist_mock.assert_called_once_with(
+            account,
+            ok=True,
+            msg="ok",
+            detail={"group_name": "nvidia"},
+        )
+
+    def test_cerebras_gpt_load_enabled_uses_platform_group_and_persists_sync_status(self):
+        account = DummyAccount(platform="cerebras", token="cb-key", extra={"api_key": "cb-key"})
+        cfg = {
+            "gpt_load_enabled": "1",
+            "gpt_load_url": "http://gpt-load.local",
+            "gpt_load_admin_key": "sk-admin",
+            "gpt_load_group_name": "nvidia",
+            "gpt_load_cerebras_group_name": "cerebras",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch(
+                "services.external_sync.upload_cerebras_account_to_gpt_load",
+                return_value=(True, "ok", {"group_name": "cerebras"}),
+            ) as upload_mock:
+                with mock.patch("services.external_sync.persist_gpt_load_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "gpt-load")
+        self.assertTrue(result[0]["ok"])
+        upload_mock.assert_called_once_with(
+            account,
+            api_url="http://gpt-load.local",
+            api_key="sk-admin",
+            group_name="cerebras",
+        )
+        persist_mock.assert_called_once_with(
+            account,
+            ok=True,
+            msg="ok",
+            detail={"group_name": "cerebras"},
+        )
+
+    def test_deepseek_ds2api_enabled_uploads_and_persists_sync_status(self):
+        account = DummyAccount(
+            platform="deepseek",
+            password="Aa1!demoPass",
+            extra={"username": "deepseek-user@example.com"},
+        )
+        cfg = {
+            "deepseek_ds2api_enabled": "1",
+            "deepseek_ds2api_url": "http://ds2api.local/admin",
+            "deepseek_ds2api_admin_key": "highkay1844",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch(
+                "services.external_sync.upload_to_ds2api",
+                return_value=(True, "ok", {"identifier": account.email}),
+            ) as upload_mock:
+                with mock.patch("services.external_sync.persist_ds2api_sync_result") as persist_mock:
+                    result = sync_account(account)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "DS2API")
+        self.assertTrue(result[0]["ok"])
+        upload_mock.assert_called_once_with(
+            account,
+            api_url="http://ds2api.local/admin",
+            admin_key="highkay1844",
+        )
+        persist_mock.assert_called_once_with(
+            account,
+            ok=True,
+            msg="ok",
+            detail={"identifier": account.email},
+        )
+
+    def test_deepseek_ds2api_disabled_skips_auto_upload_but_keeps_configuration(self):
+        account = DummyAccount(platform="deepseek", password="Aa1!demoPass")
+        cfg = {
+            "deepseek_ds2api_enabled": "0",
+            "deepseek_ds2api_url": "http://ds2api.local/admin",
+            "deepseek_ds2api_admin_key": "highkay1844",
+        }
+
+        with mock.patch("core.config_store.config_store.get", side_effect=_config_getter(cfg)):
+            with mock.patch("services.external_sync.upload_to_ds2api") as upload_mock:
+                with mock.patch("services.external_sync.persist_ds2api_sync_result") as persist_mock:
                     result = sync_account(account)
 
         self.assertEqual(result, [])

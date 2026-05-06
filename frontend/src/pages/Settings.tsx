@@ -35,6 +35,11 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'MoeMail (sall.cc)', value: 'moemail' },
     { label: 'YYDS Mail / MaliAPI', value: 'maliapi' },
     { label: 'GPTMail', value: 'gptmail' },
+    { label: 'EduMail.su（随机 .edu 邮箱）', value: 'edumail' },
+    { label: 'Imail.edu.vn（随机教育邮箱）', value: 'imail' },
+    { label: 'Edumaili.com（网页临时邮箱）', value: 'edumaili' },
+    { label: 'Boomlify Edu Temp Mail', value: 'boomlify' },
+    { label: 'Nullsto', value: 'nullsto' },
     { label: 'OpenTrashMail', value: 'opentrashmail' },
     { label: 'Cloudflare 邮件路由（直转邮箱）', value: 'cfrouting' },
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
@@ -208,6 +213,47 @@ const TAB_ITEMS = [
         ],
       },
       {
+        title: 'EduMail.su',
+        desc: '随机生成 .edu 地址，并通过站点 Livewire HTTP 会话轮询收件箱；当前按随机邮箱模式接入。',
+        fields: [
+          { key: 'edumail_base_url', label: '站点地址', placeholder: 'https://edumail.su' },
+          { key: 'edumail_domain', label: '指定域名（可选）', placeholder: 'edumail.edu.rs / admin.oxfor.edu.pl' },
+        ],
+      },
+      {
+        title: 'Imail.edu.vn',
+        desc: '与 EduMail.su 同类的 Livewire 网页邮箱，当前按纯 HTTP 会话方式接入。',
+        fields: [
+          { key: 'imail_base_url', label: '站点地址', placeholder: 'https://imail.edu.vn' },
+          { key: 'imail_domain', label: '指定域名（可选）', placeholder: 'imail.edu.vn / mailer.edu.pl' },
+        ],
+      },
+      {
+        title: 'Edumaili.com',
+        desc: '走网页前台 change / get_messages 接口；默认随机生成新邮箱，支持指定域名。',
+        fields: [
+          { key: 'edumaili_base_url', label: '站点地址', placeholder: 'https://edumaili.com' },
+          { key: 'edumaili_domain', label: '指定域名（可选）', placeholder: 'edumaili.com / edumaill.edu.pl' },
+        ],
+      },
+      {
+        title: 'Boomlify Edu Temp Mail',
+        desc: '走公开 API v1.boomlify.com；默认屏蔽当前已知被 DeepSeek 拒绝的域名，仅在未指定域名时生效。',
+        fields: [
+          { key: 'boomlify_base_url', label: '站点地址', placeholder: 'https://boomlify.com/en/edu-temp-mail' },
+          { key: 'boomlify_api_base', label: 'API Base', placeholder: 'https://v1.boomlify.com' },
+          { key: 'boomlify_domain', label: '指定域名（可选）', placeholder: 'dev.nondon.store / op.xn--yaho-sqa.com' },
+        ],
+      },
+      {
+        title: 'Nullsto',
+        desc: '从前台 bundle 提取 Supabase anon key，再直接调用 REST/RPC/function 接口。',
+        fields: [
+          { key: 'nullsto_base_url', label: '站点地址', placeholder: 'https://nullsto.edu.pl' },
+          { key: 'nullsto_domain', label: '指定域名（可选）', placeholder: 'nullsto.edu.pl' },
+        ],
+      },
+      {
         title: 'OpenTrashMail',
         desc: '对接 opentrashmail 服务；可直接轮询 /json/<email>，也支持已知域名时本地拼装随机地址',
         fields: [
@@ -270,6 +316,7 @@ const TAB_ITEMS = [
         fields: [
           { key: 'default_captcha_solver', label: '默认服务', type: 'select' },
           { key: 'yescaptcha_key', label: 'YesCaptcha Key', secret: true },
+          { key: 'yescaptcha_api_base', label: 'YesCaptcha API Base', placeholder: 'https://api.yescaptcha.com / http://192.168.1.18:38000' },
         ],
       },
     ],
@@ -373,6 +420,87 @@ const TAB_ITEMS = [
     ],
   },
   {
+    key: 'deepseek',
+    label: 'DeepSeek',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: '浏览器注册',
+        desc: 'DeepSeek 当前使用日文页面浏览器注册；协议层继续用于发码、校码、重置密码和登录校验。PoW Worker URL 仍可覆盖以适配站点升级。',
+        fields: [
+          { key: 'deepseek_ui_locale', label: 'UI Locale', placeholder: 'ja-JP' },
+          { key: 'deepseek_region', label: 'Region', placeholder: 'US' },
+          { key: 'deepseek_tz_offset_seconds', label: '时区偏移秒数', placeholder: '32400' },
+          {
+            key: 'deepseek_pow_worker_url',
+            label: 'PoW Worker URL',
+            placeholder: 'https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js',
+          },
+        ],
+      },
+      {
+        title: 'DS2API',
+        desc: '注册成功后自动把 DeepSeek 邮箱/密码新增到 DS2API 管理后台；服务端直传 Bearer admin key，不依赖登录 JWT。',
+        fields: [
+          { key: 'deepseek_ds2api_enabled', label: '启用自动导入', type: 'boolean' },
+          { key: 'deepseek_ds2api_url', label: 'Admin URL', placeholder: 'http://127.0.0.1:5001/admin' },
+          { key: 'deepseek_ds2api_admin_key', label: 'Admin Key', secret: true },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'nvidia',
+    label: 'NVIDIA',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: 'gpt-load',
+        desc: '注册成功后把 NVIDIA / Cerebras API key 自动导入到对应的 gpt-load 分组',
+        fields: [
+          { key: 'gpt_load_enabled', label: '启用自动导入', type: 'boolean' },
+          { key: 'gpt_load_url', label: 'gpt-load 地址', placeholder: 'http://107.172.141.203:43001' },
+          { key: 'gpt_load_admin_key', label: '管理密钥', secret: true },
+          { key: 'gpt_load_group_name', label: 'NVIDIA 分组名称', placeholder: 'nvidia' },
+          { key: 'gpt_load_cerebras_group_name', label: 'Cerebras 分组名称', placeholder: 'cerebras' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'cerebras',
+    label: 'Cerebras',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: '注册默认值',
+        desc: 'Cerebras 使用 magic-link 登录；这里配置首次注册默认资料。',
+        fields: [
+          { key: 'cerebras_full_name', label: '默认姓名', placeholder: '留空则按邮箱自动生成' },
+          {
+            key: 'cerebras_use_case',
+            label: '默认 Use Case',
+            type: 'select',
+            options: [
+              { label: 'Hobbyist', value: 'hobbyist' },
+              { label: 'Student', value: 'student' },
+              { label: 'Startup', value: 'startup' },
+              { label: 'Enterprise', value: 'enterprise' },
+            ],
+          },
+          { key: 'cerebras_mailbox_attempts', label: '邮箱重试次数', placeholder: '3' },
+        ],
+      },
+      {
+        title: 'gpt-load',
+        desc: '注册成功后把 Cerebras API key 自动导入到 cerebras 分组；地址和管理密钥沿用 NVIDIA 的全局 gpt-load 配置。',
+        fields: [
+          { key: 'gpt_load_cerebras_group_name', label: 'Cerebras 分组名称', placeholder: 'cerebras' },
+        ],
+      },
+    ],
+  },
+  {
     key: 'kiro',
     label: 'Kiro',
     icon: <ApiOutlined />,
@@ -462,6 +590,11 @@ const MAILBOX_SECTION_FIELD_KEY_BY_PROVIDER: Record<string, string> = {
   microsoft: 'outlook_backend',
   applemail: 'applemail_base_url',
   gptmail: 'gptmail_base_url',
+  edumail: 'edumail_base_url',
+  imail: 'imail_base_url',
+  edumaili: 'edumaili_base_url',
+  boomlify: 'boomlify_base_url',
+  nullsto: 'nullsto_base_url',
   opentrashmail: 'opentrashmail_api_url',
   duckmail: 'duckmail_api_url',
   cfworker: 'cfworker_api_url',
@@ -664,7 +797,7 @@ function ConfigField({ field }: { field: FieldConfig }) {
   const isBooleanField = field.type === 'boolean'
   const helpText =
     field.key === 'default_executor'
-      ? '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、Tavily、Trae、Qwen 支持浏览器模式，OpenBlockLabs 仅支持纯协议。'
+      ? '仅对支持的平台生效；ChatGPT、Cursor、Grok、Kiro、DeepSeek、NVIDIA、Cerebras、Tavily、Trae、Qwen 支持浏览器模式，OpenBlockLabs 仅支持纯协议。'
       : field.key === 'email_domain_rule_enabled'
       ? '仅 CF Worker 生效：开启后会校验域名级数，以及域名至少包含 2 个字母和 2 个数字。'
       : field.key === 'email_domain_level_count'
@@ -1834,7 +1967,12 @@ export default function Settings() {
   const currentMailProviderRaw = String(Form.useWatch('mail_provider', form) || '')
   const currentMailImportSource = String(Form.useWatch('mail_import_source', form) || 'microsoft')
   const currentMailProvider = resolveEffectiveMailProvider(currentMailProviderRaw, currentMailImportSource)
-  const showFloatingSaveButton = activeTab === 'mailbox' || activeTab === 'chatgpt'
+  const showFloatingSaveButton =
+    activeTab === 'mailbox' ||
+    activeTab === 'chatgpt' ||
+    activeTab === 'deepseek' ||
+    activeTab === 'nvidia' ||
+    activeTab === 'cerebras'
   const contentPaneRef = useRef<HTMLDivElement | null>(null)
   const [floatingSaveBounds, setFloatingSaveBounds] = useState<{ left: number; width: number } | null>(null)
 
@@ -1869,8 +2007,41 @@ export default function Settings() {
       if (!data.gptmail_mode) {
         data.gptmail_mode = 'api'
       }
+      if (!data.edumail_base_url) {
+        data.edumail_base_url = 'https://edumail.su'
+      }
+      if (!data.imail_base_url) {
+        data.imail_base_url = 'https://imail.edu.vn'
+      }
+      if (!data.edumaili_base_url) {
+        data.edumaili_base_url = 'https://edumaili.com'
+      }
+      if (!data.boomlify_base_url) {
+        data.boomlify_base_url = 'https://boomlify.com/en/edu-temp-mail'
+      }
+      if (!data.boomlify_api_base) {
+        data.boomlify_api_base = 'https://v1.boomlify.com'
+      }
+      if (!data.nullsto_base_url) {
+        data.nullsto_base_url = 'https://nullsto.edu.pl'
+      }
       if (!data.maliapi_base_url) {
         data.maliapi_base_url = 'https://maliapi.215.im/v1'
+      }
+      if (!data.yescaptcha_api_base) {
+        data.yescaptcha_api_base = 'https://api.yescaptcha.com'
+      }
+      if (!data.deepseek_ui_locale) {
+        data.deepseek_ui_locale = 'ja-JP'
+      }
+      if (!data.deepseek_region) {
+        data.deepseek_region = 'US'
+      }
+      if (!data.deepseek_tz_offset_seconds) {
+        data.deepseek_tz_offset_seconds = '32400'
+      }
+      if (!data.deepseek_pow_worker_url) {
+        data.deepseek_pow_worker_url = 'https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js'
       }
       if (!data.luckmail_base_url) {
         data.luckmail_base_url = 'https://mails.luckyous.com/'
@@ -1897,6 +2068,36 @@ export default function Settings() {
       data.sub2api_enabled = resolveFeatureEnabledConfig(
         data.sub2api_enabled,
         Boolean(String(data.sub2api_api_url ?? '').trim() && String(data.sub2api_api_key ?? '').trim()),
+      )
+      if (!data.gpt_load_group_name) {
+        data.gpt_load_group_name = 'nvidia'
+      }
+      if (!data.gpt_load_cerebras_group_name) {
+        data.gpt_load_cerebras_group_name = 'cerebras'
+      }
+      if (!data.cerebras_use_case) {
+        data.cerebras_use_case = 'hobbyist'
+      }
+      if (!data.cerebras_mailbox_attempts) {
+        data.cerebras_mailbox_attempts = '3'
+      }
+      data.gpt_load_enabled = resolveFeatureEnabledConfig(
+        data.gpt_load_enabled,
+        Boolean(
+          String(data.gpt_load_url ?? '').trim() &&
+            String(data.gpt_load_admin_key ?? '').trim() &&
+            (
+              String(data.gpt_load_group_name ?? '').trim() ||
+              String(data.gpt_load_cerebras_group_name ?? '').trim()
+          ),
+        ),
+      )
+      data.deepseek_ds2api_enabled = resolveFeatureEnabledConfig(
+        data.deepseek_ds2api_enabled,
+        Boolean(
+          String(data.deepseek_ds2api_url ?? '').trim() &&
+            String(data.deepseek_ds2api_admin_key ?? '').trim(),
+        ),
       )
       data.qwen_cpa_enabled = resolveFeatureEnabledConfig(
         data.qwen_cpa_enabled,
@@ -1972,6 +2173,8 @@ export default function Settings() {
       }
       values.cpa_enabled = parseBooleanConfigValue(values.cpa_enabled)
       values.sub2api_enabled = parseBooleanConfigValue(values.sub2api_enabled)
+      values.gpt_load_enabled = parseBooleanConfigValue(values.gpt_load_enabled)
+      values.deepseek_ds2api_enabled = parseBooleanConfigValue(values.deepseek_ds2api_enabled)
       values.qwen_cpa_enabled = parseBooleanConfigValue(values.qwen_cpa_enabled)
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
       values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
@@ -1996,6 +2199,7 @@ export default function Settings() {
         mail_import_source: values.mail_provider === 'applemail' ? 'applemail' : 'microsoft',
         cpa_enabled: values.cpa_enabled,
         sub2api_enabled: values.sub2api_enabled,
+        gpt_load_enabled: values.gpt_load_enabled,
         qwen_cpa_enabled: values.qwen_cpa_enabled,
         cfworker_domains: domains,
         cfworker_enabled_domains: enabledDomains,

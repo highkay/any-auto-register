@@ -1,7 +1,17 @@
 import unittest
+from unittest import mock
 from unittest.mock import patch
 
-from api.tasks import RegisterTaskRequest, _create_task_record, _run_register, _task_store
+from fastapi import HTTPException
+
+from api.tasks import (
+    RegisterTaskRequest,
+    _create_task_record,
+    _effective_register_concurrency,
+    _run_register,
+    _task_store,
+    enqueue_register_task,
+)
 from core.base_mailbox import BaseMailbox, MailboxAccount
 from core.base_platform import Account, BasePlatform
 
@@ -127,7 +137,7 @@ class RegisterTaskControlFlowTests(unittest.TestCase):
         self.assertEqual(snapshot["skipped"], 0)
         self.assertEqual(snapshot["errors"], [])
 
-    def test_chatgpt_logs_workspace_progress_after_each_success(self):
+    def test_chatgpt_logs_success_and_final_summary(self):
         task_id = "task-chatgpt-workspace-progress"
         req = self._build_request(platform="chatgpt", count=2, concurrency=1)
         _create_task_record(task_id, req, "manual", None)
@@ -144,8 +154,35 @@ class RegisterTaskControlFlowTests(unittest.TestCase):
         snapshot = _task_store.snapshot(task_id)
         joined_logs = "\n".join(snapshot["logs"])
 
-        self.assertIn("workspace进度: 1/2", joined_logs)
-        self.assertIn("workspace进度: 2/2", joined_logs)
+        self.assertIn("[OK] 注册成功: user1@example.com", joined_logs)
+        self.assertIn("[OK] 注册成功: user2@example.com", joined_logs)
+        self.assertIn("完成: 成功 2 个, 跳过 0 个, 失败 0 个", joined_logs)
+
+    def test_deepseek_forces_serial_concurrency(self):
+        req = self._build_request(platform="deepseek", count=10, concurrency=3)
+
+        self.assertEqual(_effective_register_concurrency(req), 1)
+
+    def test_other_platforms_keep_requested_concurrency(self):
+        req = self._build_request(platform="chatgpt", count=10, concurrency=3)
+
+        self.assertEqual(_effective_register_concurrency(req), 3)
+
+    def test_deepseek_rejects_second_manual_task_while_active(self):
+        task_id = "task-deepseek-active-guard"
+        req = self._build_request(platform="deepseek", count=1, concurrency=1)
+        _create_task_record(task_id, req, "manual", None)
+        background_tasks = mock.Mock()
+
+        try:
+            with self.assertRaises(HTTPException) as ctx:
+                enqueue_register_task(req, background_tasks=background_tasks)
+
+            self.assertEqual(ctx.exception.status_code, 409)
+            self.assertIn("DeepSeek", ctx.exception.detail)
+            background_tasks.add_task.assert_not_called()
+        finally:
+            _task_store._records.pop(task_id, None)
 
 
 if __name__ == "__main__":

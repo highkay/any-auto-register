@@ -8,6 +8,7 @@ import asyncio
 from typing import Optional, Union
 import argparse
 from quart import Quart, request, jsonify
+from core.proxy_utils import build_playwright_proxy_config
 
 try:
     from camoufox.async_api import AsyncCamoufox
@@ -710,8 +711,11 @@ class TurnstileAPIServer:
                     elif len(parts) == 3:
                         if self.debug:
                             logger.debug(f"Browser {index}: Creating context with proxy {proxy}")
+                        proxy_cfg = build_playwright_proxy_config(proxy)
+                        if not proxy_cfg:
+                            raise ValueError(f"Invalid proxy format: {proxy}")
                         context_options = {
-                            "proxy": {"server": f"{proxy}"},
+                            "proxy": proxy_cfg,
                             "user_agent": browser_config['useragent']
                         }
                         

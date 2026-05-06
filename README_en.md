@@ -38,13 +38,21 @@ This project is a fork/secondary development based on [lxf746/any-auto-register]
 
 ## Current Interface & Supported Platforms
 
-Based on the current frontend code and UI, the **platforms displayed by default in the left "Platform Management" menu** are:
+Based on the current `App.tsx` menu and `/api/platforms` response, the **platforms displayed by default in the left "Platform Management" menu** are:
 
+- Cerebras
 - ChatGPT
+- DeepSeek
 - Grok
 - Kiro (AWS Builder ID)
+- NVIDIA
 - OpenBlockLabs
+- Qwen
 - Trae.ai
+
+Notes:
+
+- The `cursor` and `tavily` plugins still exist in the repository, but they are currently filtered out by `api/platforms.py` and therefore do not appear in the default left menu.
 
 ## Features
 
@@ -80,8 +88,8 @@ Based on the current frontend code and UI, the **platforms displayed by default 
 ## Requirements
 
 - Python 3.12+
-- Node.js 18+
-- Conda (recommended)
+- Node.js 18+ / pnpm 10+
+- `uv` (recommended) or Conda (legacy-compatible fallback)
 - Windows (recommended for using the included startup scripts directly)
 
 ## ChatGPT Specific Features
@@ -100,10 +108,9 @@ The current version provides two ChatGPT registration modes:
   - Only outputs **Access Token / Session**
   - Features depending on RT may not work
 
-This toggle can be found in:
+In the current default UI, this toggle is exposed in the **Platform Management → ChatGPT registration dialog**.
 
-- Registration task page
-- ChatGPT platform registration popup
+The repository still keeps `frontend/src/pages/RegisterTaskPage.tsx` as a standalone form implementation for developer reference, but the current sidebar no longer exposes a separate "registration task" menu entry.
 
 ### 4. ChatGPT Batch Status Sync & Re-upload
 
@@ -119,7 +126,9 @@ At the top of the ChatGPT platform list, there are two types of batch capabiliti
 
 ## Email Service Support
 
-Based on the actual configuration in the registration page, the project supports the following email services:
+Based on the actual configuration in **Global Settings → Mailbox**, the project supports the following email services.
+
+The registration dialog in Platform Management reuses the mailbox provider selected here.
 
 | Service Name | Identifier | Description |
 | --- | --- | --- |
@@ -129,6 +138,12 @@ Based on the actual configuration in the registration page, the project supports
 | SkyMail (CloudMail) | `skymail` | Used via API / Token / Domain |
 | YYDS Mail / MaliAPI | `maliapi` | Supports domain and automatic domain strategy |
 | GPTMail | `gptmail` | Generates temporary emails via GPTMail API with rotation, supports random address assembly when domains are known |
+| EduMail.su | `edumail` | Livewire web mailbox with random address generation and optional domain pinning |
+| Imail.edu.vn | `imail` | Livewire education mailbox, skips domains currently known to be rejected by DeepSeek by default |
+| Edumaili.com | `edumaili` | Temporary mailbox built on the site's `change/get_messages` web endpoints |
+| Boomlify Edu Temp Mail | `boomlify` | Uses the `v1.boomlify.com` public API and blocks currently known DeepSeek-incompatible domains by default |
+| Nullsto | `nullsto` | Extracts the site's Supabase-facing API configuration from the frontend and generates mailboxes from it |
+| Cloudflare Mail Routing | `cfrouting` | Does not use a Worker; generates aliases for a Cloudflare-routed domain and polls the target mailbox via IMAP |
 | DuckMail | `duckmail` | Temporary email solution |
 | Freemail | `freemail` | Self-hosted email service |
 | Laoudo | `laoudo` | Fixed email solution |
@@ -145,33 +160,39 @@ Therefore, when registering **Kiro (AWS Builder ID)**, it is recommended to prio
 
 ## Quick Start
 
-### 1. Create and Activate Conda Environment
+### 1. Install and sync backend dependencies (`uv`)
 
 ```bash
-conda create -n any-auto-register python=3.12 -y
-conda activate any-auto-register
+uv python install 3.12
+uv sync
 ```
 
-### 2. Install Backend Dependencies
+The repository now includes `pyproject.toml` and `uv.lock`. Add new Python packages with:
 
 ```bash
-pip install -r requirements.txt
+uv add <package>
 ```
 
-### 3. Install Browser Dependencies
+Avoid using `uv pip install` for normal dependency management.
+
+### 2. Install browser dependencies
 
 ```bash
-python -m playwright install chromium
-python -m camoufox fetch
+uv run python -m playwright install chromium
+uv run python -m camoufox fetch
 ```
 
-### 4. Install and Build Frontend
+### 3. Install and build the frontend
+
+If `pnpm` is not available yet:
 
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
+corepack enable
+```
+
+```bash
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend build
 ```
 
 After building, static assets are output to:
@@ -180,7 +201,7 @@ After building, static assets are output to:
 ./static
 ```
 
-### 5. Start the Project
+### 4. Start the project
 
 #### Recommended for Windows
 
@@ -199,8 +220,7 @@ start_backend.bat
 #### Manual Start
 
 ```bash
-conda activate any-auto-register
-python main.py
+uv run python main.py
 ```
 
 After starting, access at:
@@ -209,7 +229,7 @@ After starting, access at:
 http://localhost:8000
 ```
 
-> If you've already run `npm run build`, the frontend is served by FastAPI directly, so you access `8000`, not `5173`.
+> If you've already run `pnpm --dir frontend build`, the frontend is served by FastAPI directly, so you access `8000`, not `5173`.
 
 ## Windows Startup Scripts
 
@@ -220,7 +240,7 @@ The repo includes the following scripts:
 - `stop_backend.bat`
 - `stop_backend.ps1`
 
-These scripts force the `any-auto-register` conda environment for starting/stopping the backend, avoiding common issues:
+These scripts prefer the repo-local `.venv` created by `uv sync`; if `.venv` is missing, they fall back to the legacy `any-auto-register` Conda environment. This avoids common issues such as:
 
 - Backend starts but Solver doesn't launch
 - `ModuleNotFoundError: quart`
@@ -258,8 +278,7 @@ Suitable for debugging React pages.
 ### Terminal 2: Start Vite
 
 ```bash
-cd frontend
-npm run dev
+pnpm --dir frontend dev
 ```
 
 Access at:
@@ -288,8 +307,7 @@ The frontend "Global Config → Captcha → Turnstile Solver" shows the **detect
 ### Manual Solver Start
 
 ```bash
-conda activate any-auto-register
-python services/turnstile_solver/start.py --browser_type camoufox --port 8889
+uv run python services/turnstile_solver/start.py --browser_type camoufox --port 8889
 ```
 
 ### Solver Logs
@@ -479,6 +497,26 @@ Then restart:
 ```powershell
 .\start_backend.ps1
 ```
+
+### 6. DeepSeek signup page only shows phone registration
+
+This is not something you can usually fix by only switching `ja-JP` / `en-US`.
+
+The current code now logs this condition explicitly as:
+
+- `DeepSeek 当前出口命中手机号注册页，不支持邮箱注册`
+
+What has been verified:
+
+- Some exits go straight to a `phone-only` signup page
+- Some exits go straight to WAF / challenge pages
+- Switching `locale` only changes the page language, not the underlying signup branch
+
+Recommended troubleshooting order:
+
+1. Change the exit IP or proxy provider first instead of only changing the UI locale.
+2. If you use local environment proxies, distinguish between the HTTP probe egress and the real Playwright browser egress.
+3. If the target platform currently returns only the phone-registration page, you need a phone/SMS signup flow rather than retrying the email flow.
 
 ## Project Structure
 

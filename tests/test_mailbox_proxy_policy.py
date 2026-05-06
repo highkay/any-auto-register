@@ -64,6 +64,37 @@ class MailboxProxyPolicyTests(unittest.TestCase):
                 },
             ),
             (
+                "edumail",
+                {
+                    "edumail_base_url": "https://edumail.su",
+                },
+            ),
+            (
+                "imail",
+                {
+                    "imail_base_url": "https://imail.edu.vn",
+                },
+            ),
+            (
+                "edumaili",
+                {
+                    "edumaili_base_url": "https://edumaili.com",
+                },
+            ),
+            (
+                "boomlify",
+                {
+                    "boomlify_base_url": "https://boomlify.com/en/edu-temp-mail",
+                    "boomlify_api_base": "https://v1.boomlify.com",
+                },
+            ),
+            (
+                "nullsto",
+                {
+                    "nullsto_base_url": "https://nullsto.edu.pl",
+                },
+            ),
+            (
                 "gptmail",
                 {
                     "gptmail_base_url": "https://mail.chatgpt.org.uk",

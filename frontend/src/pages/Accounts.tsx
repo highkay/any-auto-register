@@ -64,8 +64,9 @@ function normalizeAccount(account: any) {
   const cpaSync = syncStatuses.cpa && typeof syncStatuses.cpa === 'object' ? syncStatuses.cpa : {}
   const sub2apiSync = syncStatuses.sub2api && typeof syncStatuses.sub2api === 'object' ? syncStatuses.sub2api : {}
   const cliproxySync = syncStatuses.cliproxyapi && typeof syncStatuses.cliproxyapi === 'object' ? syncStatuses.cliproxyapi : {}
+  const gptLoadSync = syncStatuses.gpt_load && typeof syncStatuses.gpt_load === 'object' ? syncStatuses.gpt_load : {}
   const chatgptLocal = extra.chatgpt_local && typeof extra.chatgpt_local === 'object' ? extra.chatgpt_local : {}
-  return { ...account, extra, cpaSync, sub2apiSync, cliproxySync, chatgptLocal }
+  return { ...account, extra, cpaSync, sub2apiSync, cliproxySync, gptLoadSync, chatgptLocal }
 }
 
 function formatSyncTime(value?: string) {
@@ -615,6 +616,7 @@ export default function Accounts() {
     navigator.clipboard.writeText(text)
     message.success('已复制')
   }
+  const isApiKeyPlatform = ['nvidia', 'cerebras'].includes(currentPlatform)
 
   const getRefreshToken = (record: any): string => {
     try {
@@ -623,6 +625,20 @@ export default function Accounts() {
     } catch {
       return ''
     }
+  }
+
+  const getNvidiaApiKey = (record: any): string => {
+    try {
+      const extra = JSON.parse(record.extra_json || '{}')
+      return extra.api_key || record.token || ''
+    } catch {
+      return record.token || ''
+    }
+  }
+
+  const getAccountUsername = (record: any): string => {
+    const value = String(record?.extra?.username || '').trim()
+    return value
   }
 
   const exportCsv = () => {
@@ -1149,6 +1165,32 @@ export default function Accounts() {
         </div>
       ),
     },
+    ...(currentPlatform === 'deepseek'
+      ? [
+          {
+            title: '用户名',
+            key: 'username',
+            width: 180,
+            render: (_: any, record: any) => {
+              const username = getAccountUsername(record)
+              if (!username) return <Text type="secondary">-</Text>
+              return (
+                <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <Text style={{ ...monospaceStyle, maxWidth: 120 }} title={username}>
+                    {username}
+                  </Text>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<CopyOutlined />}
+                    onClick={() => copyText(username)}
+                  />
+                </Space>
+              )
+            },
+          },
+        ]
+      : []),
     {
       title: '密码',
       dataIndex: 'password',
@@ -1164,18 +1206,18 @@ export default function Accounts() {
       ),
     },
     {
-      title: 'RT',
-      key: 'refresh_token',
+      title: isApiKeyPlatform ? 'API Key' : 'RT',
+      key: isApiKeyPlatform ? 'api_key' : 'refresh_token',
       width: 120,
       render: (_: any, record: any) => {
-        const rt = getRefreshToken(record)
-        if (!rt) return <span style={{ color: '#ccc' }}>-</span>
+        const value = isApiKeyPlatform ? getNvidiaApiKey(record) : getRefreshToken(record)
+        if (!value) return <span style={{ color: '#ccc' }}>-</span>
         return (
           <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Text style={{ ...secretPreviewStyle, fontSize: 11, maxWidth: 58 }} title={rt}>
-              {rt}
+            <Text style={{ ...secretPreviewStyle, fontSize: 11, maxWidth: 58 }} title={value}>
+              {value}
             </Text>
-            <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(rt)} />
+            <Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyText(value)} />
           </Space>
         )
       },
@@ -1253,6 +1295,22 @@ export default function Accounts() {
           return (
             <Tag color={cpaMeta.color} title={uploadSyncTitle('CPA', record.cpaSync || {})}>
               {cpaMeta.label}
+            </Tag>
+          )
+        },
+      })
+    }
+
+    if (isApiKeyPlatform) {
+      columns.push({
+        title: 'gpt-load',
+        key: 'gpt_load_sync',
+        width: 120,
+        render: (_: any, record: any) => {
+          const meta = uploadSyncMeta(record.gptLoadSync || {})
+          return (
+            <Tag color={meta.color} title={uploadSyncTitle('gpt-load', record.gptLoadSync || {})}>
+              {meta.label}
             </Tag>
           )
         },
@@ -1605,10 +1663,33 @@ export default function Accounts() {
                   ]}
                 />
               </Form.Item>
-              <Form.Item name="token" label="Access Token">
+              <Form.Item name="token" label={isApiKeyPlatform ? 'API Key' : 'Access Token'}>
                 <Input.TextArea rows={2} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
             </Form>
+            {isApiKeyPlatform ? (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ marginBottom: 4, fontWeight: 500, fontSize: 13 }}>API Key</div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    background: token.colorFillAlter,
+                    border: `1px solid ${token.colorBorder}`,
+                    borderRadius: token.borderRadius,
+                    padding: '8px 10px',
+                  }}
+                >
+                  <Text
+                    style={{ fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all', flex: 1, userSelect: 'text' }}
+                    copyable={{ text: getNvidiaApiKey(currentAccount), tooltips: ['复制 API Key', '已复制'] }}
+                  >
+                    {getNvidiaApiKey(currentAccount)}
+                  </Text>
+                </div>
+              </div>
+            ) : null}
             {(() => {
               const rt = getRefreshToken(currentAccount)
               if (!rt) return null
@@ -1636,6 +1717,33 @@ export default function Accounts() {
                 </div>
               )
             })()}
+            {['nvidia', 'cerebras'].includes(currentPlatform) ? (
+              <DetailSection title="gpt-load 状态">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <Tag color={uploadSyncMeta(currentAccount.gptLoadSync || {}).color}>
+                    {uploadSyncMeta(currentAccount.gptLoadSync || {}).label}
+                  </Tag>
+                </div>
+                <SummaryField label="分组" value={currentAccount.gptLoadSync?.detail?.group_name} />
+                <SummaryField label="结果" value={currentAccount.gptLoadSync?.last_message} code />
+                <SummaryField label="成功时间" value={currentAccount.gptLoadSync?.uploaded_at ? formatSyncTime(currentAccount.gptLoadSync.uploaded_at) : ''} />
+                <SummaryField label="最近尝试" value={currentAccount.gptLoadSync?.last_attempt_at ? formatSyncTime(currentAccount.gptLoadSync.last_attempt_at) : ''} />
+              </DetailSection>
+            ) : null}
+            {currentPlatform === 'deepseek' ? (
+              <DetailSection title="DeepSeek 信息">
+                <SummaryField label="用户名" value={getAccountUsername(currentAccount)} />
+                <SummaryField
+                  label="Need Birthday"
+                  value={
+                    currentAccount?.extra?.need_birthday === undefined
+                      ? ''
+                      : String(currentAccount.extra.need_birthday)
+                  }
+                />
+                <SummaryField label="Device ID" value={currentAccount?.extra?.device_id} code />
+              </DetailSection>
+            ) : null}
             {currentPlatform === 'kiro' && currentAccount?.extra ? (
               <DetailSection title="Kiro 客户端信息">
                 <SummaryField label="Client ID" value={currentAccount.extra?.clientId} code />

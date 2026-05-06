@@ -13,6 +13,7 @@ CONFIG_KEYS = [
     "laoudo_email",
     "laoudo_account_id",
     "yescaptcha_key",
+    "yescaptcha_api_base",
     "twocaptcha_key",
     "default_executor",
     "default_captcha_solver",
@@ -52,6 +53,17 @@ CONFIG_KEYS = [
     "gptmail_api_key",
     "gptmail_mode",
     "gptmail_domain",
+    "edumail_base_url",
+    "edumail_domain",
+    "imail_base_url",
+    "imail_domain",
+    "edumaili_base_url",
+    "edumaili_domain",
+    "boomlify_base_url",
+    "boomlify_api_base",
+    "boomlify_domain",
+    "nullsto_base_url",
+    "nullsto_domain",
     "opentrashmail_api_url",
     "opentrashmail_domain",
     "opentrashmail_password",
@@ -101,6 +113,21 @@ CONFIG_KEYS = [
     "codex_proxy_upload_type",
     "cliproxyapi_base_url",
     "cliproxyapi_management_key",
+    "gpt_load_enabled",
+    "gpt_load_url",
+    "gpt_load_admin_key",
+    "gpt_load_group_name",
+    "gpt_load_cerebras_group_name",
+    "cerebras_full_name",
+    "cerebras_use_case",
+    "cerebras_mailbox_attempts",
+    "deepseek_ui_locale",
+    "deepseek_region",
+    "deepseek_tz_offset_seconds",
+    "deepseek_pow_worker_url",
+    "deepseek_ds2api_enabled",
+    "deepseek_ds2api_url",
+    "deepseek_ds2api_admin_key",
     "grok2api_url",
     "grok2api_app_key",
     "grok2api_pool",
@@ -154,6 +181,18 @@ def get_config():
         all_cfg["gptmail_base_url"] = "https://mail.chatgpt.org.uk"
     if not all_cfg.get("gptmail_mode"):
         all_cfg["gptmail_mode"] = "api"
+    if not all_cfg.get("edumail_base_url"):
+        all_cfg["edumail_base_url"] = "https://edumail.su"
+    if not all_cfg.get("imail_base_url"):
+        all_cfg["imail_base_url"] = "https://imail.edu.vn"
+    if not all_cfg.get("edumaili_base_url"):
+        all_cfg["edumaili_base_url"] = "https://edumaili.com"
+    if not all_cfg.get("boomlify_base_url"):
+        all_cfg["boomlify_base_url"] = "https://boomlify.com/en/edu-temp-mail"
+    if not all_cfg.get("boomlify_api_base"):
+        all_cfg["boomlify_api_base"] = "https://v1.boomlify.com"
+    if not all_cfg.get("nullsto_base_url"):
+        all_cfg["nullsto_base_url"] = "https://nullsto.edu.pl"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
     if not str(all_cfg.get("contribution_enabled", "") or "").strip():
@@ -166,6 +205,28 @@ def get_config():
         all_cfg["custom_contribution_url"] = "http://127.0.0.1:5000"
     if not all_cfg.get("external_apps_update_mode"):
         all_cfg["external_apps_update_mode"] = "tag"
+    if not all_cfg.get("yescaptcha_api_base"):
+        all_cfg["yescaptcha_api_base"] = "https://api.yescaptcha.com"
+    if not all_cfg.get("gpt_load_group_name"):
+        all_cfg["gpt_load_group_name"] = "nvidia"
+    if not all_cfg.get("gpt_load_cerebras_group_name"):
+        all_cfg["gpt_load_cerebras_group_name"] = "cerebras"
+    if not all_cfg.get("cerebras_use_case"):
+        all_cfg["cerebras_use_case"] = "hobbyist"
+    if not all_cfg.get("cerebras_mailbox_attempts"):
+        all_cfg["cerebras_mailbox_attempts"] = "3"
+    if not all_cfg.get("deepseek_ui_locale"):
+        all_cfg["deepseek_ui_locale"] = "ja-JP"
+    if not all_cfg.get("deepseek_region"):
+        all_cfg["deepseek_region"] = "US"
+    if not all_cfg.get("deepseek_tz_offset_seconds"):
+        all_cfg["deepseek_tz_offset_seconds"] = "32400"
+    if not all_cfg.get("deepseek_pow_worker_url"):
+        all_cfg["deepseek_pow_worker_url"] = (
+            "https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js"
+        )
+    if not str(all_cfg.get("deepseek_ds2api_enabled", "") or "").strip():
+        all_cfg["deepseek_ds2api_enabled"] = "0"
     if not str(all_cfg.get("email_domain_rule_enabled", "") or "").strip():
         all_cfg["email_domain_rule_enabled"] = "0"
     if not str(all_cfg.get("email_domain_level_count", "") or "").strip():

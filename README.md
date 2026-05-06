@@ -44,13 +44,21 @@
 
 ## 当前界面与实际平台展示
 
-根据当前前端代码与界面，**左侧“平台管理”菜单默认显示的平台**为：
+根据当前 `App.tsx` 菜单和 `/api/platforms` 返回结果，**左侧“平台管理”菜单默认显示的平台**为：
 
+- Cerebras
 - ChatGPT
+- DeepSeek
 - Grok
 - Kiro (AWS Builder ID)
+- NVIDIA
 - OpenBlockLabs
+- Qwen
 - Trae.ai
+
+说明：
+
+- `cursor` 和 `tavily` 插件仍在仓库中，但当前被 `api/platforms.py` 过滤，不会出现在默认左侧菜单中。
 
 
 
@@ -108,10 +116,9 @@
   - 仅产出 **Access Token / Session**
   - 依赖 RT 的后续能力可能不可用
 
-这项切换在以下位置都能看到：
+当前默认 UI 在 **平台管理 → ChatGPT → 注册弹窗** 中提供这项切换。
 
-- 注册任务页
-- ChatGPT 平台注册弹窗
+仓库中仍保留了 `frontend/src/pages/RegisterTaskPage.tsx` 这份独立表单实现，便于开发时参考请求字段映射；但当前侧边栏不会再单独暴露“注册任务”菜单。
 
 
 
@@ -129,7 +136,9 @@
 
 ## 邮箱服务支持
 
-根据当前注册页实际配置项，项目支持以下邮箱服务：
+根据当前 **全局配置 → 邮箱服务** 实际配置项，项目支持以下邮箱服务：
+
+平台管理页里的注册弹窗会直接复用这里的邮箱 provider 与相关配置。
 
 | 服务名称 | 标识 | 说明 |
 | --- | --- | --- |
@@ -139,7 +148,16 @@
 | SkyMail (CloudMail) | `skymail` | 通过 API / Token / 域名使用 |
 | YYDS Mail / MaliAPI | `maliapi` | 支持域名与自动域名策略 |
 | GPTMail | `gptmail` | 基于 GPTMail API 生成临时邮箱并轮询邮件，支持已知域名时本地拼装随机地址 |
+| EduMail.su | `edumail` | Livewire 网页邮箱，支持随机地址与可选指定域名 |
+| Imail.edu.vn | `imail` | Livewire 教育邮箱，默认会跳过已知被 DeepSeek 拒绝的域名 |
+| Edumaili.com | `edumaili` | 基于网页 `change/get_messages` 的临时邮箱 |
+| Boomlify Edu Temp Mail | `boomlify` | 走 `v1.boomlify.com` 公共 API，默认屏蔽当前已知不适合 DeepSeek 的域名 |
+| Nullsto | `nullsto` | 通过站点前端配置提取 Supabase 接口并生成邮箱 |
 | Cloudflare 邮件路由 | `cfrouting` | 不走 Worker；假设你已在 Cloudflare 配好邮件路由转发，本项目只负责生成别名并直接轮询目标邮箱 IMAP，目标邮箱可用 QQ 或个人 Gmail |
+| DuckMail | `duckmail` | 临时邮箱方案 |
+| Freemail | `freemail` | 自建邮箱服务 |
+| Laoudo | `laoudo` | 固定邮箱方案 |
+| CF Worker | `cfworker` | Cloudflare Worker 自建邮箱 |
 
 ### Cloudflare 邮件路由（QQ / Gmail）
 
@@ -166,10 +184,6 @@
 - 个人 Gmail 不必先接 OAuth；对本项目这种普通 IMAP 登录，通常直接使用 `App Password` 即可。
 - QQ 和 Gmail 都建议先把 `轮询文件夹` 留成 `INBOX`，确认邮件实际落点后再调整。
 - 如果你已经确认 QQ 网页端能很快看到邮件，但 IMAP 抓取明显滞后，优先考虑改用 Gmail 作为 Cloudflare 转发目标。
-| DuckMail | `duckmail` | 临时邮箱方案 |
-| Freemail | `freemail` | 自建邮箱服务 |
-| Laoudo | `laoudo` | 固定邮箱方案 |
-| CF Worker | `cfworker` | Cloudflare Worker 自建邮箱 |
 
 ### Kiro 邮箱说明
 
@@ -521,6 +535,24 @@ http://localhost:8889/
 ```powershell
 .\stop_backend.ps1
 ```
+
+### 6. DeepSeek 注册页只显示手机号
+
+这不是单纯切 `ja-JP` / `en-US` 就能解决的问题。当前代码已经把这类情况明确记录成：
+
+- `DeepSeek 当前出口命中手机号注册页，不支持邮箱注册`
+
+已验证现象：
+
+- 某些出口会直接进入 `phone-only` 注册页
+- 某些出口会直接命中 WAF / challenge
+- 单纯切换 `locale` 只会改变文案语言，不会把手机号页切回邮箱页
+
+建议排查顺序：
+
+1. 先换出口或代理供应商，而不是只改前端语言。
+2. 如果使用本机环境代理，区分 HTTP 探针和 Playwright 浏览器的真实出口。
+3. 如果目标平台当前只返回手机号页，就需要改走短信注册链路，而不是继续重试邮箱链路。
 
 然后重新启动：
 

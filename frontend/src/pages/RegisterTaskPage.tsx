@@ -68,6 +68,7 @@ export default function RegisterTaskPage() {
         applemail_pool_file: cfg.applemail_pool_file || '',
         applemail_mailboxes: cfg.applemail_mailboxes || 'INBOX,Junk',
         yescaptcha_key: cfg.yescaptcha_key || '',
+        yescaptcha_api_base: cfg.yescaptcha_api_base || 'https://api.yescaptcha.com',
         moemail_api_url: cfg.moemail_api_url || '',
         moemail_api_key: cfg.moemail_api_key || '',
         skymail_api_base: cfg.skymail_api_base || 'https://api.skymail.ink',
@@ -126,6 +127,14 @@ export default function RegisterTaskPage() {
         luckmail_api_key: cfg.luckmail_api_key || '',
         luckmail_email_type: cfg.luckmail_email_type || '',
         luckmail_domain: cfg.luckmail_domain || '',
+        deepseek_ui_locale: cfg.deepseek_ui_locale || 'ja-JP',
+        deepseek_region: cfg.deepseek_region || 'US',
+        deepseek_tz_offset_seconds: cfg.deepseek_tz_offset_seconds || '32400',
+        deepseek_pow_worker_url:
+          cfg.deepseek_pow_worker_url || 'https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js',
+        cerebras_full_name: cfg.cerebras_full_name || '',
+        cerebras_use_case: cfg.cerebras_use_case || 'hobbyist',
+        cerebras_mailbox_attempts: cfg.cerebras_mailbox_attempts || '3',
       })
     })
   }, [form])
@@ -197,7 +206,15 @@ export default function RegisterTaskPage() {
       luckmail_api_key: values.luckmail_api_key,
       luckmail_email_type: values.luckmail_email_type,
       luckmail_domain: values.luckmail_domain,
+      deepseek_ui_locale: values.deepseek_ui_locale,
+      deepseek_region: values.deepseek_region,
+      deepseek_tz_offset_seconds: values.deepseek_tz_offset_seconds,
+      deepseek_pow_worker_url: values.deepseek_pow_worker_url,
+      cerebras_full_name: values.cerebras_full_name,
+      cerebras_use_case: values.cerebras_use_case,
+      cerebras_mailbox_attempts: values.cerebras_mailbox_attempts,
       yescaptcha_key: values.yescaptcha_key,
+      yescaptcha_api_base: values.yescaptcha_api_base,
       solver_url: values.solver_url,
     }
     const chatgptRegistrationRequestAdapter =
@@ -269,6 +286,12 @@ export default function RegisterTaskPage() {
         platform: 'trae',
         executor_type: 'protocol',
         captcha_solver: 'yescaptcha',
+        deepseek_ui_locale: 'ja-JP',
+        deepseek_region: 'US',
+        deepseek_tz_offset_seconds: '32400',
+        deepseek_pow_worker_url: 'https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js',
+        cerebras_use_case: 'hobbyist',
+        cerebras_mailbox_attempts: '3',
         mail_provider: 'luckmail',
         mail_import_source: 'microsoft',
         applemail_base_url: 'https://www.appleemail.top',
@@ -296,6 +319,9 @@ export default function RegisterTaskPage() {
                 { value: 'cursor', label: 'Cursor' },
                 { value: 'kiro', label: 'Kiro' },
                 { value: 'grok', label: 'Grok' },
+                { value: 'deepseek', label: 'DeepSeek' },
+                { value: 'nvidia', label: 'NVIDIA' },
+                { value: 'cerebras', label: 'Cerebras' },
                 { value: 'tavily', label: 'Tavily' },
                 { value: 'openblocklabs', label: 'OpenBlockLabs' },
                 { value: 'qwen', label: 'Qwen' },
@@ -337,6 +363,72 @@ export default function RegisterTaskPage() {
                 onChange={setChatgptRegistrationMode}
               />
             </Form.Item>
+          )}
+          {platform === 'deepseek' && (
+            <>
+              <Space style={{ width: '100%' }}>
+                <Form.Item
+                  name="deepseek_ui_locale"
+                  label="UI Locale"
+                  style={{ flex: 1 }}
+                  extra="已验证邮箱注册链路使用 ja-JP"
+                >
+                  <Input placeholder="ja-JP" />
+                </Form.Item>
+                <Form.Item
+                  name="deepseek_region"
+                  label="Region"
+                  style={{ flex: 1 }}
+                  extra="已验证邮箱注册链路使用 US"
+                >
+                  <Input placeholder="US" />
+                </Form.Item>
+              </Space>
+              <Space style={{ width: '100%' }}>
+                <Form.Item
+                  name="deepseek_tz_offset_seconds"
+                  label="时区偏移秒数"
+                  style={{ flex: 1 }}
+                  extra="已验证可用值：32400"
+                >
+                  <Input placeholder="32400" />
+                </Form.Item>
+                <Form.Item
+                  name="deepseek_pow_worker_url"
+                  label="PoW Worker URL"
+                  style={{ flex: 1 }}
+                  extra="用于 DeepSeekHashV1 计算；如站点升级，可在这里覆盖。"
+                >
+                  <Input placeholder="https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js" />
+                </Form.Item>
+              </Space>
+            </>
+          )}
+          {platform === 'cerebras' && (
+            <>
+              <Space style={{ width: '100%' }}>
+                <Form.Item name="cerebras_full_name" label="Cerebras 姓名" style={{ flex: 1 }}>
+                  <Input placeholder="留空则按邮箱自动生成" />
+                </Form.Item>
+                <Form.Item name="cerebras_use_case" label="Use Case" style={{ flex: 1 }}>
+                  <Select
+                    options={[
+                      { value: 'hobbyist', label: 'Hobbyist' },
+                      { value: 'student', label: 'Student' },
+                      { value: 'startup', label: 'Startup' },
+                      { value: 'enterprise', label: 'Enterprise' },
+                    ]}
+                  />
+                </Form.Item>
+              </Space>
+              <Form.Item
+                name="cerebras_mailbox_attempts"
+                label="邮箱重试次数"
+                extra="仅在未手填邮箱时生效；如果遇到域名拒绝，会自动切换新邮箱重试。"
+              >
+                <InputNumber min={1} max={10} style={{ width: '100%' }} />
+              </Form.Item>
+            </>
           )}
         </Card>
 
@@ -685,6 +777,9 @@ export default function RegisterTaskPage() {
           <Card title="验证码配置" style={{ marginBottom: 16 }}>
             <Form.Item name="yescaptcha_key" label="YesCaptcha Key">
               <Input />
+            </Form.Item>
+            <Form.Item name="yescaptcha_api_base" label="YesCaptcha API Base">
+              <Input placeholder="https://api.yescaptcha.com / http://192.168.1.18:38000" />
             </Form.Item>
           </Card>
         )}

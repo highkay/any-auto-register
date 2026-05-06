@@ -293,6 +293,21 @@ def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
     return prepared
 
 
+def _effective_register_concurrency(req: RegisterTaskRequest) -> int:
+    requested = max(1, min(int(req.concurrency or 1), int(req.count or 1)))
+    if str(req.platform or "").strip().lower() == "deepseek":
+        return 1
+    return requested
+
+
+def _requires_single_active_register_task(
+    req: RegisterTaskRequest, *, source: str
+) -> bool:
+    if str(source or "").strip().lower() != "manual":
+        return False
+    return str(req.platform or "").strip().lower() in {"deepseek"}
+
+
 def _create_task_record(
     task_id: str, req: RegisterTaskRequest, source: str, meta: dict | None = None
 ):
@@ -314,6 +329,14 @@ def enqueue_register_task(
     meta: dict | None = None,
 ) -> str:
     prepared = _prepare_register_request(req)
+    if _requires_single_active_register_task(prepared, source=source) and has_active_register_task(
+        platform=prepared.platform,
+        source=source,
+    ):
+        raise HTTPException(
+            409,
+            "DeepSeek 当前已有运行中的手动注册任务，请等待完成或先停止后再启动新的任务",
+        )
     task_id = f"task_{int(time.time() * 1000)}"
     _create_task_record(task_id, prepared, source, meta)
     if background_tasks is None:
@@ -577,7 +600,13 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
 
         from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed
 
-        max_workers = min(req.concurrency, req.count)
+        max_workers = _effective_register_concurrency(req)
+        requested_workers = max(1, min(req.concurrency, req.count))
+        if max_workers != requested_workers:
+            _log(
+                task_id,
+                "[DeepSeek] 当前强制使用串行注册，以规避并发触发的页面语言漂移、发码超时和登录节流",
+            )
         stopped = False
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = [pool.submit(_do_one, i) for i in range(req.count)]

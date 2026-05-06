@@ -2,7 +2,17 @@
 import sys
 import os
 from pathlib import Path
-sys.path.insert(0, os.path.dirname(__file__))
+
+
+def _bootstrap_sys_path() -> None:
+    solver_dir = Path(__file__).resolve().parent
+    repo_root = solver_dir.parent.parent
+    for path in (str(solver_dir), str(repo_root)):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+
+_bootstrap_sys_path()
 
 from api_solver import create_app, parse_args
 import asyncio

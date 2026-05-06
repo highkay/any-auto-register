@@ -22,7 +22,7 @@ from core.browser_runtime import (
     resolve_browser_headless,
 )
 from urllib.request import Request, build_opener
-from core.proxy_utils import build_requests_proxy_config
+from core.proxy_utils import build_playwright_proxy_config, build_requests_proxy_config
 
 try:
     from curl_cffi import requests as cffi_requests
@@ -181,6 +181,7 @@ class KiroRegister:
         # 保存捕获到的 Token API 响应
         self._captured_tokens = {}
         self._network_debug = []
+        self._last_aws_backend_error = {}
 
     def _require_context(self):
         if self.context is None:
@@ -245,7 +246,9 @@ class KiroRegister:
             ],
         }
         if self.proxy:
-            launch_opts["proxy"] = {"server": self.proxy}
+            proxy_cfg = build_playwright_proxy_config(self.proxy)
+            if proxy_cfg:
+                launch_opts["proxy"] = proxy_cfg
 
         self.browser = self.pw.chromium.launch(**launch_opts)
         profile = self._build_random_profile()
@@ -278,6 +281,15 @@ class KiroRegister:
 
     def _is_watched_url(self, url: str) -> bool:
         url = (url or "").lower()
+        if any(
+            host in url
+            for host in [
+                "signin.aws",
+                "profile.aws.amazon.com",
+                "oidc.us-east-1.amazonaws.com",
+            ]
+        ):
+            return True
         return any(
             keyword in url
             for keyword in [
@@ -291,9 +303,166 @@ class KiroRegister:
         )
 
     def _append_network_debug(self, entry):
+        entry.setdefault("ts", time.time())
         self._network_debug.append(entry)
-        if len(self._network_debug) > 60:
-            self._network_debug = self._network_debug[-60:]
+        if len(self._network_debug) > 120:
+            self._network_debug = self._network_debug[-120:]
+
+    @staticmethod
+    def _extract_aws_backend_error_details(data) -> tuple[str, str]:
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                return "", ""
+
+        if not isinstance(data, dict):
+            return "", ""
+
+        code = str(data.get("errorCode") or data.get("code") or "").strip()
+        message = ""
+
+        error_obj = data.get("error")
+        if isinstance(error_obj, dict):
+            if not code:
+                code = str(error_obj.get("code") or "").strip()
+            message = str(error_obj.get("message") or "").strip()
+
+        message_obj = data.get("message")
+        if isinstance(message_obj, dict):
+            if not code:
+                code = str(
+                    message_obj.get("errorCode") or message_obj.get("code") or ""
+                ).strip()
+            heading = str(message_obj.get("heading") or "").strip()
+            text = str(
+                message_obj.get("text") or message_obj.get("message") or ""
+            ).strip()
+            if heading and text:
+                message = f"{heading}: {text}"
+            else:
+                message = heading or text or message
+        elif isinstance(message_obj, str):
+            message = message_obj.strip() or message
+
+        return code, message
+
+    @staticmethod
+    def _aws_error_source_label(url: str) -> str:
+        value = str(url or "").lower()
+        if "profile.aws.amazon.com/api/send-otp" in value:
+            return "send-otp"
+        if "signin.aws" in value and "/api/execute" in value:
+            return "api/execute"
+        if "signup/api/execute" in value:
+            return "signup/api/execute"
+        if value:
+            return value
+        return "unknown"
+
+    def _format_aws_backend_error(self, url: str, status: int, data) -> str:
+        code, message = self._extract_aws_backend_error_details(data)
+        if not code and not message:
+            return ""
+
+        parts = [f"HTTP {status}"] if status else []
+        if code:
+            parts.append(code)
+        detail = " / ".join(parts)
+        label = self._aws_error_source_label(url)
+        if detail:
+            return f"AWS {label} 失败 [{detail}]: {message or 'unknown error'}"
+        return f"AWS {label} 失败: {message or 'unknown error'}"
+
+    @staticmethod
+    def _merge_stage_error(page_error: str, backend_error: str) -> str:
+        page_text = str(page_error or "").strip()
+        backend_text = str(backend_error or "").strip()
+        if not backend_text:
+            return page_text
+        if not page_text:
+            return backend_text
+
+        lowered = page_text.lower()
+        if any(
+            marker in lowered
+            for marker in [
+                "error processing your request",
+                "unexpected error has occurred",
+                "please try again",
+            ]
+        ):
+            return backend_text
+        if backend_text in page_text:
+            return page_text
+        return f"{page_text} | {backend_text}"
+
+    @staticmethod
+    def _is_generic_aws_page_error(page_error: str) -> bool:
+        lowered = str(page_error or "").strip().lower()
+        if not lowered:
+            return False
+        return any(
+            marker in lowered
+            for marker in [
+                "error processing your request",
+                "unexpected error has occurred",
+                "please try again",
+            ]
+        )
+
+    def _get_last_aws_backend_error(self, since_ts: float = 0.0) -> str:
+        last = self._last_aws_backend_error or {}
+        message = str(last.get("message") or "").strip()
+        if not message:
+            return ""
+        last_ts = float(last.get("ts") or 0.0)
+        if since_ts and last_ts and last_ts < float(since_ts):
+            return ""
+        return message
+
+    def _get_recent_aws_backend_error(
+        self, since_index: int = 0, since_ts: float = 0.0
+    ) -> str:
+        start = max(int(since_index or 0), 0)
+        for entry in reversed(self._network_debug[start:]):
+            if entry.get("type") != "response":
+                continue
+            entry_ts = float(entry.get("ts") or 0.0)
+            if since_ts and entry_ts and entry_ts < float(since_ts):
+                continue
+            backend_error = str(entry.get("backend_error") or "").strip()
+            if backend_error:
+                return backend_error
+            formatted = self._format_aws_backend_error(
+                str(entry.get("url") or ""),
+                int(entry.get("status") or 0),
+                entry.get("json") or entry.get("text") or "",
+            )
+            if formatted:
+                return formatted
+        return self._get_last_aws_backend_error(since_ts=since_ts)
+
+    def _resolve_stage_error(
+        self, page_error: str, since_index: int = 0, since_ts: float = 0.0
+    ) -> str:
+        backend_error = self._get_recent_aws_backend_error(
+            since_index=since_index, since_ts=since_ts
+        )
+        if backend_error:
+            return self._merge_stage_error(page_error, backend_error)
+
+        if self._is_generic_aws_page_error(page_error):
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                time.sleep(0.2)
+                backend_error = self._get_recent_aws_backend_error(
+                    since_index=since_index, since_ts=since_ts
+                )
+                if backend_error:
+                    break
+
+        return self._merge_stage_error(page_error, backend_error)
 
     def _on_request(self, request):
         try:
@@ -305,6 +474,7 @@ class KiroRegister:
                 "type": "request",
                 "method": request.method,
                 "url": url,
+                "resource_type": request.resource_type,
             }
             post_data = request.post_data
             if post_data:
@@ -326,7 +496,13 @@ class KiroRegister:
             if not self._is_watched_url(url):
                 return
 
-            entry = {"type": "response", "url": url, "status": response.status}
+            entry = {
+                "type": "response",
+                "url": url,
+                "status": response.status,
+                "resource_type": response.request.resource_type,
+                "ts": time.time(),
+            }
             body = None
             try:
                 body = response.json()
@@ -345,6 +521,22 @@ class KiroRegister:
                 if interesting:
                     self._captured_tokens.update(interesting)
                     self.log(f"成功拦截到疑似 Token 响应: {url}")
+
+            backend_error = self._format_aws_backend_error(
+                url,
+                response.status,
+                body if isinstance(body, dict) else entry.get("text") or "",
+            )
+            if backend_error:
+                entry["backend_error"] = backend_error
+                if backend_error != self._last_aws_backend_error.get("message"):
+                    self._last_aws_backend_error = {
+                        "message": backend_error,
+                        "url": url,
+                        "status": response.status,
+                        "ts": entry.get("ts"),
+                    }
+                    self.log(backend_error)
 
             self._append_network_debug(entry)
         except Exception:
@@ -581,7 +773,11 @@ class KiroRegister:
         return False, "提交验证码后未进入密码设置页"
 
     def _wait_for_post_email_step(
-        self, page: Page, timeout_ms: int = 30000
+        self,
+        page: Page,
+        timeout_ms: int = 30000,
+        since_index: int = 0,
+        since_ts: float = 0.0,
     ) -> Tuple[str, Optional[Locator], str]:
         deadline = time.time() + (timeout_ms / 1000)
         error_patterns = [
@@ -607,15 +803,30 @@ class KiroRegister:
             error_text = self._get_first_visible_text(page, error_patterns)
             if not error_text:
                 error_text = self._get_aws_alert_text(page)
-            if error_text:
-                return "error", None, error_text
+            merged_error = self._resolve_stage_error(
+                error_text, since_index=since_index, since_ts=since_ts
+            )
+            if merged_error:
+                return "error", None, merged_error
 
             self._human_sleep(0.2, 0.6)
 
-        return "timeout", None, "等待姓名或 OTP 输入框超时"
+        return (
+            "timeout",
+            None,
+            self._resolve_stage_error(
+                "等待姓名或 OTP 输入框超时",
+                since_index=since_index,
+                since_ts=since_ts,
+            ),
+        )
 
     def _wait_for_otp_step(
-        self, page: Page, timeout_ms: int = 18000
+        self,
+        page: Page,
+        timeout_ms: int = 18000,
+        since_index: int = 0,
+        since_ts: float = 0.0,
     ) -> Tuple[bool, str, Optional[Locator]]:
         deadline = time.time() + (timeout_ms / 1000)
         error_patterns = [
@@ -633,12 +844,23 @@ class KiroRegister:
             error_text = self._get_first_visible_text(page, error_patterns)
             if not error_text:
                 error_text = self._get_aws_alert_text(page)
-            if error_text:
-                return False, error_text, None
+            merged_error = self._resolve_stage_error(
+                error_text, since_index=since_index, since_ts=since_ts
+            )
+            if merged_error:
+                return False, merged_error, None
 
             self._human_sleep(0.2, 0.6)
 
-        return False, "等待 OTP 输入框超时", None
+        return (
+            False,
+            self._resolve_stage_error(
+                "等待 OTP 输入框超时",
+                since_index=since_index,
+                since_ts=since_ts,
+            ),
+            None,
+        )
 
     def _fill_password_fields(self, page: Page, password: str):
         password_field = page.get_by_label("Password", exact=True)
@@ -1032,6 +1254,8 @@ class KiroRegister:
                 'input[placeholder="username@example.com"], input[type="email"]',
                 email,
             )
+            post_email_debug_index = len(self._network_debug)
+            post_email_started_at = time.time()
             self._click_primary_button(page)
             self._human_sleep(1.1, 2.4)
             self._solve_captcha_if_exists(page)
@@ -1039,7 +1263,10 @@ class KiroRegister:
             # 2. 等待邮箱后的实际下一步（某些 AWS 页面会延迟很久才出现姓名输入框）
             self.log("2. 等待姓名或 OTP 阶段...")
             stage, stage_input, stage_error = self._wait_for_post_email_step(
-                page, timeout_ms=30000
+                page,
+                timeout_ms=30000,
+                since_index=post_email_debug_index,
+                since_ts=post_email_started_at,
             )
             if stage == "error":
                 return False, {"error": f"Email 提交后 AWS 返回错误: {stage_error}"}
@@ -1052,12 +1279,17 @@ class KiroRegister:
                 if stage_input is None:
                     return False, {"error": "未找到姓名输入框"}
                 self._type_like_human(page, stage_input, name)
+                post_name_debug_index = len(self._network_debug)
+                post_name_started_at = time.time()
                 self._click_primary_button(page)
                 self._human_sleep(1.1, 2.4)
 
                 self.log("3. 等待触发 OTP...")
                 otp_ready, otp_wait_error, otp_input = self._wait_for_otp_step(
-                    page, timeout_ms=30000
+                    page,
+                    timeout_ms=30000,
+                    since_index=post_name_debug_index,
+                    since_ts=post_name_started_at,
                 )
             else:
                 self.log("2. 当前流程直接进入 OTP，跳过姓名填写")

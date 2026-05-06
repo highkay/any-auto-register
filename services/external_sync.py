@@ -10,6 +10,15 @@ from services.chatgpt_sync import (
     persist_sub2api_sync_result,
     upload_chatgpt_account_to_cpa,
 )
+from services.gpt_load_sync import (
+    upload_cerebras_account_to_gpt_load,
+    persist_gpt_load_sync_result,
+    upload_nvidia_account_to_gpt_load,
+)
+from platforms.deepseek.ds2api_upload import (
+    persist_ds2api_sync_result,
+    upload_to_ds2api,
+)
 
 
 def _is_config_enabled(value: Any, default: bool = False) -> bool:
@@ -30,6 +39,14 @@ def _pick_text(source: Any, *keys: str, default: str = "") -> str:
         if text:
             return text
     return default
+
+
+def _resolve_gpt_load_group_name(config_store: Any, platform: str) -> str:
+    platform_key = f"gpt_load_{str(platform or '').strip().lower()}_group_name"
+    platform_group = str(config_store.get(platform_key, "") or "").strip()
+    if platform_group:
+        return platform_group
+    return str(config_store.get("gpt_load_group_name", "") or "").strip()
 
 
 def sync_account(account) -> list[dict[str, Any]]:
@@ -211,6 +228,24 @@ def sync_account(account) -> list[dict[str, Any]]:
             persist_sub2api_sync_result(account, ok, msg)
             results.append({"name": "Sub2API", "ok": ok, "msg": msg})
 
+    elif platform == "deepseek":
+        ds2api_url = str(config_store.get("deepseek_ds2api_url", "") or "").strip()
+        ds2api_admin_key = str(
+            config_store.get("deepseek_ds2api_admin_key", "") or ""
+        ).strip()
+        ds2api_enabled = _is_config_enabled(
+            config_store.get("deepseek_ds2api_enabled", ""),
+            default=bool(ds2api_url and ds2api_admin_key),
+        )
+        if ds2api_enabled:
+            ok, msg, detail = upload_to_ds2api(
+                account,
+                api_url=ds2api_url,
+                admin_key=ds2api_admin_key,
+            )
+            persist_ds2api_sync_result(account, ok=ok, msg=msg, detail=detail)
+            results.append({"name": "DS2API", "ok": ok, "msg": msg})
+
     elif platform == "grok":
         grok2api_url = str(config_store.get("grok2api_url", "") or "").strip()
         if grok2api_url:
@@ -294,5 +329,29 @@ def sync_account(account) -> list[dict[str, Any]]:
                     api_key=qwen_cpa_key or None,
                 )
                 results.append({"name": "Qwen CPA", "ok": ok, "msg": msg})
+
+    elif platform in {"nvidia", "cerebras"}:
+        gpt_load_url = str(config_store.get("gpt_load_url", "") or "").strip()
+        gpt_load_key = str(config_store.get("gpt_load_admin_key", "") or "").strip()
+        gpt_load_group = _resolve_gpt_load_group_name(config_store, platform)
+        gpt_load_enabled = _is_config_enabled(
+            config_store.get("gpt_load_enabled", ""),
+            default=bool(gpt_load_url and gpt_load_key and gpt_load_group),
+        )
+
+        if gpt_load_enabled and gpt_load_url and gpt_load_key and gpt_load_group:
+            upload_fn = (
+                upload_nvidia_account_to_gpt_load
+                if platform == "nvidia"
+                else upload_cerebras_account_to_gpt_load
+            )
+            ok, msg, detail = upload_fn(
+                account,
+                api_url=gpt_load_url,
+                api_key=gpt_load_key,
+                group_name=gpt_load_group,
+            )
+            persist_gpt_load_sync_result(account, ok=ok, msg=msg, detail=detail)
+            results.append({"name": "gpt-load", "ok": ok, "msg": msg})
 
     return results

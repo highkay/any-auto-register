@@ -142,7 +142,13 @@ class BasePlatform(ABC):
         t = self.config.captcha_solver
         if t == "yescaptcha":
             key = kwargs.get("key") or self.config.extra.get("yescaptcha_key", "")
-            return YesCaptcha(key)
+            api_base = (
+                kwargs.get("api_base")
+                or self.config.extra.get("yescaptcha_api_base")
+                or os.getenv("YESCAPTCHA_API_BASE")
+                or None
+            )
+            return YesCaptcha(key, api_base=api_base)
         elif t == "manual":
             return ManualCaptcha()
         elif t == "local_solver":

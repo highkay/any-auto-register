@@ -47,6 +47,9 @@ const PLATFORM_LABELS: Record<string, string> = {
   cursor: 'Cursor',
   grok: 'Grok',
   kiro: 'Kiro',
+  deepseek: 'DeepSeek',
+  nvidia: 'NVIDIA',
+  cerebras: 'Cerebras',
   tavily: 'Tavily',
   openblocklabs: 'OpenBlock Labs',
 }

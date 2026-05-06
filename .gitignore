@@ -79,6 +79,12 @@ htmlcov/
 # 不要全局忽略图片/HTML，避免误伤 docs/images 等正式资源
 # 如有本地调试截图，请按需补充更精确的文件名规则
 kiro_error.*
+.playwright-mcp/
+tmp/
+tmp_*
+nvidia-*.png
+slide-*.png
+屏幕截图 *.png
 
 # 本地数据文件
 account_manager.db

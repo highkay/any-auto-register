@@ -15,7 +15,6 @@ import {
 import zhCN from 'antd/locale/zh_CN'
 import Dashboard from '@/pages/Dashboard'
 import Accounts from '@/pages/Accounts'
-import RegisterTaskPage from '@/pages/RegisterTaskPage'
 import Proxies from '@/pages/Proxies'
 import Settings from '@/pages/Settings'
 import TaskHistory from '@/pages/TaskHistory'
@@ -239,7 +238,6 @@ function AppContent() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/accounts/:platform" element={<Accounts />} />
-            <Route path="/register" element={<RegisterTaskPage />} />
             <Route path="/running-tasks" element={<RunningTasks />} />
             <Route path="/history" element={<TaskHistory />} />
             <Route path="/proxies" element={<Proxies />} />

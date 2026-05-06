@@ -19,6 +19,7 @@ from core.browser_runtime import (
     ensure_browser_display_available,
     resolve_browser_headless,
 )
+from core.proxy_utils import build_playwright_proxy_config
 
 
 UA = (
@@ -82,7 +83,9 @@ class GrokRegister:
             "channel": "msedge",
         }
         if self.proxy:
-            launch_kwargs["proxy"] = {"server": self.proxy}
+            proxy_cfg = build_playwright_proxy_config(self.proxy)
+            if proxy_cfg:
+                launch_kwargs["proxy"] = proxy_cfg
         try:
             browser = playwright.chromium.launch(**launch_kwargs)
         except Exception:

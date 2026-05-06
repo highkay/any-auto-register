@@ -12,6 +12,9 @@ import { apiFetch } from '@/lib/utils'
 const PLATFORM_COLORS: Record<string, string> = {
   trae: '#3b82f6',
   cursor: '#10b981',
+  deepseek: '#2563eb',
+  nvidia: '#76b900',
+  cerebras: '#f97316',
 }
 
 const STATUS_COLORS: Record<string, string> = {

@@ -141,6 +141,9 @@ export default function TaskHistory() {
               { value: '', label: '全部平台' },
               { value: 'trae', label: 'Trae' },
               { value: 'cursor', label: 'Cursor' },
+              { value: 'deepseek', label: 'DeepSeek' },
+              { value: 'nvidia', label: 'NVIDIA' },
+              { value: 'cerebras', label: 'Cerebras' },
             ]}
           />
           <Button icon={<ReloadOutlined spin={loading} />} onClick={load} loading={loading} />

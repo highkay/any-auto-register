@@ -38,13 +38,21 @@ Dự án này được phát triển lại từ [lxf746/any-auto-register](https
 
 ## Giao diện hiện tại & các nền tảng được hỗ trợ
 
-Theo mã nguồn frontend hiện tại, **các nền tảng hiển thị mặc định trong menu "Quản lý nền tảng"** bao gồm:
+Theo menu `App.tsx` hiện tại và kết quả từ `/api/platforms`, **các nền tảng hiển thị mặc định trong menu "Quản lý nền tảng"** bao gồm:
 
+- Cerebras
 - ChatGPT
+- DeepSeek
 - Grok
 - Kiro (AWS Builder ID)
+- NVIDIA
 - OpenBlockLabs
+- Qwen
 - Trae.ai
+
+Ghi chú:
+
+- Plugin `cursor` và `tavily` vẫn còn trong repo, nhưng hiện đang bị `api/platforms.py` lọc khỏi danh sách nên không xuất hiện trong menu bên trái mặc định.
 
 ## Tính năng
 
@@ -80,8 +88,8 @@ Theo mã nguồn frontend hiện tại, **các nền tảng hiển thị mặc �
 ## Yêu cầu môi trường
 
 - Python 3.12+
-- Node.js 18+
-- Conda (khuyến nghị)
+- Node.js 18+ / pnpm 10+
+- `uv` (khuyến nghị) hoặc Conda (dùng cho luồng cũ)
 - Windows (khuyến nghị sử dụng script khởi động có sẵn trong repo)
 
 ## Tính năng chuyên biệt cho ChatGPT
@@ -100,10 +108,9 @@ Phiên bản hiện tại cung cấp hai chế độ đăng ký ChatGPT:
   - Chỉ xuất ra **Access Token / Session**
   - Các chức năng phụ thuộc RT có thể không hoạt động
 
-Chuyển đổi này có thể tìm thấy ở:
+Trong UI mặc định hiện tại, tùy chọn này nằm trong **Quản lý nền tảng → hộp thoại đăng ký ChatGPT**.
 
-- Trang tác vụ đăng ký
-- Cửa sổ popup đăng ký ChatGPT
+Repo vẫn giữ `frontend/src/pages/RegisterTaskPage.tsx` như một triển khai form độc lập để tham khảo khi phát triển, nhưng sidebar hiện tại không còn hiển thị menu "tác vụ đăng ký" riêng nữa.
 
 ### 4. Đồng bộ trạng thái hàng loạt & re-upload cho ChatGPT
 
@@ -119,7 +126,9 @@ Chuyển đổi này có thể tìm thấy ở:
 
 ## Hỗ trợ dịch vụ email
 
-Theo cấu hình thực tế trong trang đăng ký, dự án hỗ trợ các dịch vụ email sau:
+Theo cấu hình thực tế trong **Cấu hình toàn cục → Dịch vụ email**, dự án hỗ trợ các dịch vụ email sau.
+
+Hộp thoại đăng ký trong phần Quản lý nền tảng sẽ dùng lại mailbox provider được chọn ở đây.
 
 | Tên dịch vụ | Định danh | Ghi chú |
 | --- | --- | --- |
@@ -129,6 +138,12 @@ Theo cấu hình thực tế trong trang đăng ký, dự án hỗ trợ các d�
 | SkyMail (CloudMail) | `skymail` | Sử dụng qua API / Token / Domain |
 | YYDS Mail / MaliAPI | `maliapi` | Hỗ trợ chiến lược domain tự động |
 | GPTMail | `gptmail` | Tạo email tạm thời qua GPTMail API và xoay vòng, hỗ trợ ghép ngẫu nhiên khi đã biết domain |
+| EduMail.su | `edumail` | Hộp thư web Livewire, hỗ trợ tạo địa chỉ ngẫu nhiên và có thể khóa domain nếu cần |
+| Imail.edu.vn | `imail` | Hộp thư giáo dục Livewire, mặc định bỏ qua các domain đã biết là bị DeepSeek từ chối |
+| Edumaili.com | `edumaili` | Hộp thư tạm dựa trên các endpoint web `change/get_messages` của trang |
+| Boomlify Edu Temp Mail | `boomlify` | Dùng public API `v1.boomlify.com`, mặc định chặn các domain hiện đã biết là không phù hợp với DeepSeek |
+| Nullsto | `nullsto` | Trích cấu hình API kiểu Supabase từ frontend của trang để tạo hộp thư |
+| Cloudflare Mail Routing | `cfrouting` | Không dùng Worker; tạo bí danh trên domain đã route qua Cloudflare và đọc thư từ hộp thư đích qua IMAP |
 | DuckMail | `duckmail` | Email tạm thời |
 | Freemail | `freemail` | Dịch vụ email tự xây dựng |
 | Laoudo | `laoudo` | Email cố định |
@@ -145,33 +160,39 @@ Do đó khi đăng ký **Kiro (AWS Builder ID)**, khuyến nghị ưu tiên sử
 
 ## Bắt đầu nhanh
 
-### 1. Tạo và kích hoạt môi trường Conda
+### 1. Cài đặt và đồng bộ phụ thuộc backend bằng `uv`
 
 ```bash
-conda create -n any-auto-register python=3.12 -y
-conda activate any-auto-register
+uv python install 3.12
+uv sync
 ```
 
-### 2. Cài đặt phụ thuộc backend
+Repo hiện đã có `pyproject.toml` và `uv.lock`. Khi cần thêm phụ thuộc Python mới, ưu tiên dùng:
 
 ```bash
-pip install -r requirements.txt
+uv add <package>
 ```
 
-### 3. Cài đặt phụ thuộc trình duyệt
+Không nên tiếp tục dùng `uv pip install` cho luồng quản lý phụ thuộc thông thường.
+
+### 2. Cài đặt phụ thuộc trình duyệt
 
 ```bash
-python -m playwright install chromium
-python -m camoufox fetch
+uv run python -m playwright install chromium
+uv run python -m camoufox fetch
 ```
 
-### 4. Cài đặt và build frontend
+### 3. Cài đặt và build frontend
+
+Nếu máy chưa có `pnpm`, hãy chạy trước:
 
 ```bash
-cd frontend
-npm install
-npm run build
-cd ..
+corepack enable
+```
+
+```bash
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend build
 ```
 
 Sau khi build xong, tài nguyên tĩnh được xuất ra:
@@ -180,7 +201,7 @@ Sau khi build xong, tài nguyên tĩnh được xuất ra:
 ./static
 ```
 
-### 5. Khởi động dự án
+### 4. Khởi động dự án
 
 #### Khuyến nghị cho Windows
 
@@ -199,8 +220,7 @@ start_backend.bat
 #### Khởi động thủ công
 
 ```bash
-conda activate any-auto-register
-python main.py
+uv run python main.py
 ```
 
 Sau khi khởi động, truy cập mặc định:
@@ -209,7 +229,7 @@ Sau khi khởi động, truy cập mặc định:
 http://localhost:8000
 ```
 
-> Nếu đã thực hiện `npm run build`, frontend sẽ do FastAPI trực tiếp quản lý, do đó truy cập qua `8000`, không phải `5173`.
+> Nếu đã thực hiện `pnpm --dir frontend build`, frontend sẽ do FastAPI trực tiếp quản lý, do đó truy cập qua `8000`, không phải `5173`.
 
 ## Script khởi động Windows
 
@@ -220,7 +240,7 @@ Repo đã cung cấp các script sau:
 - `stop_backend.bat`
 - `stop_backend.ps1`
 
-Các script này bắt buộc sử dụng môi trường `any-auto-register` để khởi động/dừng backend, tránh các vấn đề thường gặp:
+Các script này sẽ ưu tiên dùng `.venv` tại thư mục gốc repo do `uv sync` tạo ra; nếu `.venv` không tồn tại thì mới quay lại môi trường Conda `any-auto-register`. Cách này giúp tránh các vấn đề thường gặp:
 
 - Backend khởi động được nhưng Solver không chạy
 - `ModuleNotFoundError: quart`
@@ -258,8 +278,7 @@ Phù hợp khi cần debug giao diện React.
 ### Terminal 2: Khởi động Vite
 
 ```bash
-cd frontend
-npm run dev
+pnpm --dir frontend dev
 ```
 
 Truy cập:
@@ -288,8 +307,7 @@ Frontend "Cấu hình toàn cục → Captcha → Turnstile Solver" hiển thị
 ### Khởi động Solver thủ công
 
 ```bash
-conda activate any-auto-register
-python services/turnstile_solver/start.py --browser_type camoufox --port 8889
+uv run python services/turnstile_solver/start.py --browser_type camoufox --port 8889
 ```
 
 ### Log Solver
@@ -479,6 +497,26 @@ Sau đó khởi động lại:
 ```powershell
 .\start_backend.ps1
 ```
+
+### 6. DeepSeek chỉ hiển thị trang đăng ký bằng số điện thoại
+
+Vấn đề này thường không thể giải quyết chỉ bằng cách đổi `ja-JP` / `en-US`.
+
+Mã hiện tại sẽ ghi rõ tình huống này bằng log:
+
+- `DeepSeek 当前出口命中手机号注册页，不支持邮箱注册`
+
+Những gì đã được xác minh:
+
+- Một số exit sẽ đi thẳng tới trang đăng ký kiểu `phone-only`
+- Một số exit sẽ đi thẳng tới WAF / challenge
+- Đổi `locale` chỉ thay đổi ngôn ngữ hiển thị, không đổi được nhánh đăng ký phía máy chủ
+
+Thứ tự kiểm tra được khuyến nghị:
+
+1. Đổi exit IP hoặc nhà cung cấp proxy trước, thay vì chỉ đổi ngôn ngữ UI.
+2. Nếu bạn đang dùng proxy môi trường trên máy cục bộ, hãy tách biệt HTTP probe với egress thật của Playwright browser.
+3. Nếu nền tảng đích hiện chỉ trả về trang đăng ký bằng số điện thoại, bạn cần đi theo luồng SMS/phone thay vì tiếp tục retry luồng email.
 
 ## Cấu trúc dự án
 
