@@ -76,12 +76,6 @@ class MailboxProxyPolicyTests(unittest.TestCase):
                 },
             ),
             (
-                "edumaili",
-                {
-                    "edumaili_base_url": "https://edumaili.com",
-                },
-            ),
-            (
                 "boomlify",
                 {
                     "boomlify_base_url": "https://boomlify.com/en/edu-temp-mail",

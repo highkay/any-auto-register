@@ -37,7 +37,6 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'GPTMail', value: 'gptmail' },
     { label: 'EduMail.su（随机 .edu 邮箱）', value: 'edumail' },
     { label: 'Imail.edu.vn（随机教育邮箱）', value: 'imail' },
-    { label: 'Edumaili.com（网页临时邮箱）', value: 'edumaili' },
     { label: 'Boomlify Edu Temp Mail', value: 'boomlify' },
     { label: 'Nullsto', value: 'nullsto' },
     { label: 'OpenTrashMail', value: 'opentrashmail' },
@@ -226,14 +225,6 @@ const TAB_ITEMS = [
         fields: [
           { key: 'imail_base_url', label: '站点地址', placeholder: 'https://imail.edu.vn' },
           { key: 'imail_domain', label: '指定域名（可选）', placeholder: 'imail.edu.vn / mailer.edu.pl' },
-        ],
-      },
-      {
-        title: 'Edumaili.com',
-        desc: '走网页前台 change / get_messages 接口；默认随机生成新邮箱，支持指定域名。',
-        fields: [
-          { key: 'edumaili_base_url', label: '站点地址', placeholder: 'https://edumaili.com' },
-          { key: 'edumaili_domain', label: '指定域名（可选）', placeholder: 'edumaili.com / edumaill.edu.pl' },
         ],
       },
       {
@@ -592,7 +583,6 @@ const MAILBOX_SECTION_FIELD_KEY_BY_PROVIDER: Record<string, string> = {
   gptmail: 'gptmail_base_url',
   edumail: 'edumail_base_url',
   imail: 'imail_base_url',
-  edumaili: 'edumaili_base_url',
   boomlify: 'boomlify_base_url',
   nullsto: 'nullsto_base_url',
   opentrashmail: 'opentrashmail_api_url',
@@ -2012,9 +2002,6 @@ export default function Settings() {
       }
       if (!data.imail_base_url) {
         data.imail_base_url = 'https://imail.edu.vn'
-      }
-      if (!data.edumaili_base_url) {
-        data.edumaili_base_url = 'https://edumaili.com'
       }
       if (!data.boomlify_base_url) {
         data.boomlify_base_url = 'https://boomlify.com/en/edu-temp-mail'

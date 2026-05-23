@@ -7,7 +7,6 @@ import httpx
 from core.edumail_client import EduMailSessionClient
 from core.web_mailbox_clients import (
     BoomlifySessionClient,
-    EduMailiSessionClient,
     NullstoSessionClient,
 )
 
@@ -192,51 +191,6 @@ class LivewireMailboxClientCompatibilityTests(unittest.TestCase):
         self.assertEqual(create_updates[0]["type"], "syncInput")
         self.assertEqual(create_updates[1]["payload"]["method"], "create")
 
-
-class EduMailiSessionClientTests(unittest.TestCase):
-    @patch("time.sleep", return_value=None)
-    @patch("core.web_mailbox_clients.httpx.Client")
-    def test_generate_random_email_uses_change_then_get_messages(
-        self,
-        mock_client_cls,
-        _sleep,
-    ):
-        home_html = """
-        <html>
-          <head><meta name="csrf-token" content="csrf-edumaili"></head>
-          <body>
-            <input id="mainEmail" type="text" value="seed123@edumaill.edu.pl" />
-            <select id="name_domain">
-              <option value="edumaili.com">edumaili.com</option>
-              <option value="edumaili.edu.pl">edumaili.edu.pl</option>
-              <option value="edumaill.edu.pl">edumaill.edu.pl</option>
-            </select>
-          </body>
-        </html>
-        """
-        fake_client = _FakeHttpxClient(
-            [
-                _FakeResponse(text=home_html),
-                _FakeResponse(text="return", headers={"content-type": "text/html"}),
-                _FakeResponse(
-                    json_data={"mailbox": "probe777@edumaill.edu.pl", "email_token": "token-1", "messages": []},
-                    headers={"content-type": "application/json"},
-                ),
-            ]
-        )
-        mock_client_cls.return_value = fake_client
-
-        client = EduMailiSessionClient(base_url="https://edumaili.com")
-        with patch("core.web_mailbox_clients._generate_local_part", return_value="probe777"):
-            result = client.generate_random_email()
-
-        self.assertEqual(result, "probe777@edumaill.edu.pl")
-        self.assertEqual(fake_client.post_calls[0]["url"], "https://edumaili.com/change")
-        self.assertEqual(
-            fake_client.post_calls[0]["json"],
-            {"_token": "csrf-edumaili", "name": "probe777", "domain": "edumaill.edu.pl"},
-        )
-        self.assertEqual(fake_client.post_calls[1]["url"], "https://edumaili.com/get_messages")
 
 
 class BoomlifySessionClientTests(unittest.TestCase):

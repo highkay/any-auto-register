@@ -140,7 +140,6 @@ The registration dialog in Platform Management reuses the mailbox provider selec
 | GPTMail | `gptmail` | Generates temporary emails via GPTMail API with rotation, supports random address assembly when domains are known |
 | EduMail.su | `edumail` | Livewire web mailbox with random address generation and optional domain pinning |
 | Imail.edu.vn | `imail` | Livewire education mailbox, skips domains currently known to be rejected by DeepSeek by default |
-| Edumaili.com | `edumaili` | Temporary mailbox built on the site's `change/get_messages` web endpoints |
 | Boomlify Edu Temp Mail | `boomlify` | Uses the `v1.boomlify.com` public API and blocks currently known DeepSeek-incompatible domains by default |
 | Nullsto | `nullsto` | Extracts the site's Supabase-facing API configuration from the frontend and generates mailboxes from it |
 | Cloudflare Mail Routing | `cfrouting` | Does not use a Worker; generates aliases for a Cloudflare-routed domain and polls the target mailbox via IMAP |

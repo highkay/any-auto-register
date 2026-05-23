@@ -150,7 +150,6 @@
 | GPTMail | `gptmail` | 基于 GPTMail API 生成临时邮箱并轮询邮件，支持已知域名时本地拼装随机地址 |
 | EduMail.su | `edumail` | Livewire 网页邮箱，支持随机地址与可选指定域名 |
 | Imail.edu.vn | `imail` | Livewire 教育邮箱，默认会跳过已知被 DeepSeek 拒绝的域名 |
-| Edumaili.com | `edumaili` | 基于网页 `change/get_messages` 的临时邮箱 |
 | Boomlify Edu Temp Mail | `boomlify` | 走 `v1.boomlify.com` 公共 API，默认屏蔽当前已知不适合 DeepSeek 的域名 |
 | Nullsto | `nullsto` | 通过站点前端配置提取 Supabase 接口并生成邮箱 |
 | Cloudflare 邮件路由 | `cfrouting` | 不走 Worker；假设你已在 Cloudflare 配好邮件路由转发，本项目只负责生成别名并直接轮询目标邮箱 IMAP，目标邮箱可用 QQ 或个人 Gmail |

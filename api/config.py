@@ -57,8 +57,6 @@ CONFIG_KEYS = [
     "edumail_domain",
     "imail_base_url",
     "imail_domain",
-    "edumaili_base_url",
-    "edumaili_domain",
     "boomlify_base_url",
     "boomlify_api_base",
     "boomlify_domain",
@@ -185,8 +183,6 @@ def get_config():
         all_cfg["edumail_base_url"] = "https://edumail.su"
     if not all_cfg.get("imail_base_url"):
         all_cfg["imail_base_url"] = "https://imail.edu.vn"
-    if not all_cfg.get("edumaili_base_url"):
-        all_cfg["edumaili_base_url"] = "https://edumaili.com"
     if not all_cfg.get("boomlify_base_url"):
         all_cfg["boomlify_base_url"] = "https://boomlify.com/en/edu-temp-mail"
     if not all_cfg.get("boomlify_api_base"):

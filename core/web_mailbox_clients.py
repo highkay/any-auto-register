@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
 import random
 import re
-import secrets
-import time
 from typing import Any
 from urllib.parse import quote, urljoin
 
@@ -36,171 +33,9 @@ def _generate_local_part(length: int = 10) -> str:
     return f"{prefix}{suffix}"
 
 
-class EduMailiSessionClient:
-    def __init__(self, *, base_url: str = "https://edumaili.com"):
-        self.base_url = (str(base_url or "https://edumaili.com").strip() or "https://edumaili.com").rstrip("/")
-        self.home_url = f"{self.base_url}/"
-        self._client: httpx.Client | None = None
-        self._csrf_token: str | None = None
-        self._domains: list[str] | None = None
-
-    def _ensure_client(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(
-                follow_redirects=True,
-                http2=True,
-                trust_env=False,
-                timeout=20.0,
-                headers={
-                    "user-agent": _USER_AGENT,
-                    "accept-language": "en-US,en;q=0.9",
-                    "cache-control": "no-cache",
-                    "pragma": "no-cache",
-                    "x-requested-with": "XMLHttpRequest",
-                },
-            )
-        return self._client
-
-    @staticmethod
-    def _extract_csrf(html_text: str) -> str:
-        match = re.search(
-            r'<meta\s+name="csrf-token"\s+content="([^"]+)"',
-            str(html_text or ""),
-            flags=re.IGNORECASE,
-        )
-        if not match:
-            raise RuntimeError("EduMaili 页面中未找到 csrf token")
-        return str(match.group(1) or "").strip()
-
-    @staticmethod
-    def _extract_domains(html_text: str) -> list[str]:
-        options = re.findall(
-            r'<option\s+value="([^"]+)">\s*([^<]+)\s*</option>',
-            str(html_text or ""),
-            flags=re.IGNORECASE,
-        )
-        domains = []
-        seen = set()
-        for value, _label in options:
-            domain = _normalize_domain(value)
-            if not domain or domain in seen:
-                continue
-            seen.add(domain)
-            domains.append(domain)
-        return domains
-
-    @staticmethod
-    def _extract_email(text: str) -> str:
-        match = _EMAIL_RE.search(str(text or ""))
-        return str(match.group(1) or "").strip().lower() if match else ""
-
-    def _load_home(self) -> tuple[str, list[str], str]:
-        response = self._ensure_client().get(self.home_url, headers={"referer": self.home_url})
-        response.raise_for_status()
-        html_text = response.text
-        csrf_token = self._extract_csrf(html_text)
-        domains = self._extract_domains(html_text)
-        current_email = ""
-        value_match = re.search(
-            r'<input[^>]+id="mainEmail"[^>]+value="([^"]+)"',
-            html_text,
-            flags=re.IGNORECASE,
-        )
-        if value_match:
-            current_email = self._extract_email(value_match.group(1))
-        self._csrf_token = csrf_token
-        self._domains = domains
-        return csrf_token, domains, current_email
-
-    def list_domains(self) -> list[str]:
-        _csrf_token, domains, _current_email = self._load_home()
-        return domains
-
-    def _ajax_headers(self, csrf_token: str) -> dict[str, str]:
-        return {
-            "accept": "application/json, text/plain, */*",
-            "content-type": "application/json",
-            "origin": self.base_url,
-            "referer": self.home_url,
-            "x-csrf-token": csrf_token,
-            "x-requested-with": "XMLHttpRequest",
-        }
-
-    def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
-        csrf_token = self._csrf_token
-        if not csrf_token:
-            csrf_token, _domains, _current = self._load_home()
-        response = self._ensure_client().post(
-            f"{self.base_url}/{path.lstrip('/')}",
-            headers=self._ajax_headers(csrf_token),
-            json=payload,
-        )
-        if response.status_code >= 400:
-            preview = (response.text or "")[:400]
-            raise RuntimeError(
-                f"EduMaili {path} 失败: HTTP {response.status_code} {preview}"
-            )
-        content_type = str(response.headers.get("content-type") or "").lower()
-        if "application/json" in content_type:
-            return response.json()
-        return response.text
-
-    def get_messages(self, email_addr: str) -> list[dict[str, Any]]:
-        email_addr = self._extract_email(email_addr)
-        payload = self._post_json(
-            "get_messages",
-            {"_token": self._csrf_token or "", "captcha": ""},
-        )
-        if not isinstance(payload, dict):
-            raise RuntimeError(f"EduMaili get_messages 返回异常: {payload!r}")
-        mailbox = self._extract_email(payload.get("mailbox") or payload.get("email") or "")
-        if email_addr and mailbox and mailbox != email_addr:
-            raise RuntimeError(
-                f"EduMaili 当前会话邮箱不匹配: expected={email_addr} actual={mailbox}"
-            )
-        messages = payload.get("messages") or []
-        return [item for item in messages if isinstance(item, dict)]
-
-    def generate_random_email(self, *, domain: str = "") -> str:
-        _csrf_token, domains, current_email = self._load_home()
-        target_domain = _normalize_domain(domain)
-        if target_domain:
-            if target_domain not in domains:
-                raise RuntimeError(f"EduMaili 不支持指定域名: {target_domain}")
-        else:
-            target_domain = _normalize_domain(current_email.split("@", 1)[1] if "@" in current_email else "")
-            if not target_domain:
-                if not domains:
-                    raise RuntimeError("EduMaili 未发现可用域名")
-                target_domain = domains[0]
-
-        self._post_json(
-            "change",
-            {
-                "_token": self._csrf_token or "",
-                "name": _generate_local_part(),
-                "domain": target_domain,
-            },
-        )
-        time.sleep(0.2)
-        payload = self._post_json(
-            "get_messages",
-            {"_token": self._csrf_token or "", "captcha": ""},
-        )
-        if not isinstance(payload, dict):
-            raise RuntimeError(f"EduMaili get_messages 返回异常: {payload!r}")
-        email_addr = self._extract_email(payload.get("mailbox") or payload.get("email") or "")
-        if not email_addr:
-            raise RuntimeError("EduMaili 生成邮箱成功后未返回 mailbox")
-        return email_addr
-
-    def close(self) -> None:
-        if self._client is not None:
-            try:
-                self._client.close()
-            except Exception:
-                pass
-        self._client = None
+def _extract_email(text: str) -> str:
+    match = _EMAIL_RE.search(str(text or ""))
+    return str(match.group(1) or "").strip().lower() if match else ""
 
 
 class BoomlifySessionClient:
@@ -281,13 +116,13 @@ class BoomlifySessionClient:
             candidate = email_payload.get("email") or email_payload.get("address") or ""
         else:
             candidate = email_payload or ""
-        result = EduMailiSessionClient._extract_email(candidate)
+        result = _extract_email(candidate)
         if not result:
             raise RuntimeError(f"Boomlify create 返回异常: {payload!r}")
         return result
 
     def get_messages(self, email_addr: str) -> list[dict[str, Any]]:
-        target = EduMailiSessionClient._extract_email(email_addr)
+        target = _extract_email(email_addr)
         if not target:
             raise RuntimeError("Boomlify 缺少邮箱地址，无法拉取收件箱")
         response = self._ensure_client().get(
@@ -418,7 +253,7 @@ class NullstoSessionClient:
         if not isinstance(payload, dict) or not payload.get("success"):
             raise RuntimeError(f"Nullsto create_temp_email 返回异常: {payload!r}")
         email_payload = dict(payload.get("email") or {})
-        result = EduMailiSessionClient._extract_email(
+        result = _extract_email(
             email_payload.get("address") or email_payload.get("email") or ""
         )
         email_id = str(email_payload.get("id") or "").strip()
@@ -429,7 +264,7 @@ class NullstoSessionClient:
         return result
 
     def get_messages(self, email_addr: str) -> list[dict[str, Any]]:
-        target = EduMailiSessionClient._extract_email(email_addr)
+        target = _extract_email(email_addr)
         if not target:
             raise RuntimeError("Nullsto 缺少邮箱地址，无法拉取收件箱")
         token_info = self._tokens_by_email.get(target)

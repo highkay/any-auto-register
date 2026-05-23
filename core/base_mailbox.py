@@ -365,12 +365,6 @@ def create_mailbox(
             domain=extra.get("imail_domain", ""),
             proxy=proxy,
         )
-    elif provider == "edumaili":
-        return EduMailiMailbox(
-            api_url=extra.get("edumaili_base_url", "https://edumaili.com"),
-            domain=extra.get("edumaili_domain", ""),
-            proxy=proxy,
-        )
     elif provider == "boomlify":
         return BoomlifyMailbox(
             api_url=extra.get("boomlify_base_url", "https://boomlify.com/en/edu-temp-mail"),
@@ -2319,91 +2313,6 @@ class ImailMailbox(EduMailMailbox):
             extra={"provider": self.provider_key, "domain": self.domain or ""},
         )
 
-
-class EduMailiMailbox(BaseMailbox):
-    """Edumaili.com 网页邮箱服务"""
-
-    provider_label = "EduMaili"
-
-    def __init__(
-        self,
-        api_url: str = "https://edumaili.com",
-        domain: str = "",
-        proxy: str = None,
-    ):
-        self.api = (api_url or "https://edumaili.com").rstrip("/")
-        self.domain = str(domain or "").strip().lower().lstrip("@")
-        self.proxy = build_mailbox_proxy_config(proxy)
-        self._proxy_url = None
-        self._client = None
-
-    def _get_client(self):
-        if self._client is None:
-            from .web_mailbox_clients import EduMailiSessionClient
-
-            self._client = EduMailiSessionClient(base_url=self.api)
-        return self._client
-
-    def get_email(self) -> MailboxAccount:
-        email = self._get_client().generate_random_email(domain=self.domain)
-        self._log(f"[{self.provider_label}] 生成邮箱: {email}")
-        return MailboxAccount(
-            email=email,
-            account_id=email,
-            extra={"provider": "edumaili", "domain": self.domain or ""},
-        )
-
-    def get_current_ids(self, account: MailboxAccount) -> set:
-        try:
-            return {
-                self._message_id_value(message)
-                for message in self._get_client().get_messages(account.email)
-            }
-        except Exception:
-            return set()
-
-    def wait_for_code(
-        self,
-        account: MailboxAccount,
-        keyword: str = "",
-        timeout: int = 120,
-        before_ids: set = None,
-        code_pattern: str = None,
-        **kwargs,
-    ) -> str:
-        seen = {str(mid) for mid in (before_ids or set())}
-        exclude_codes = {
-            str(code).strip()
-            for code in (kwargs.get("exclude_codes") or set())
-            if str(code or "").strip()
-        }
-        last_poll_error = {"last": None}
-
-        def poll_once() -> Optional[str]:
-            try:
-                messages = self._get_client().get_messages(account.email)
-                last_poll_error["last"] = None
-                for message in messages:
-                    message_id = self._message_id_value(message)
-                    if not message_id or message_id in seen:
-                        continue
-                    seen.add(message_id)
-
-                    search_text = self._message_search_text(message)
-                    if keyword and keyword.lower() not in search_text.lower():
-                        continue
-
-                    code = self._safe_extract(search_text, code_pattern)
-                    if code and code in exclude_codes:
-                        continue
-                    if code:
-                        self._log(f"[{self.provider_label}] 收到验证码: {code}")
-                        return code
-            except Exception as e:
-                self._log_polling_exception_once(last_poll_error, e)
-            return None
-
-        return self._run_polling_wait(timeout=timeout, poll_interval=3, poll_once=poll_once)
 
 
 class BoomlifyMailbox(BaseMailbox):

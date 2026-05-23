@@ -140,7 +140,6 @@ Hộp thoại đăng ký trong phần Quản lý nền tảng sẽ dùng lại m
 | GPTMail | `gptmail` | Tạo email tạm thời qua GPTMail API và xoay vòng, hỗ trợ ghép ngẫu nhiên khi đã biết domain |
 | EduMail.su | `edumail` | Hộp thư web Livewire, hỗ trợ tạo địa chỉ ngẫu nhiên và có thể khóa domain nếu cần |
 | Imail.edu.vn | `imail` | Hộp thư giáo dục Livewire, mặc định bỏ qua các domain đã biết là bị DeepSeek từ chối |
-| Edumaili.com | `edumaili` | Hộp thư tạm dựa trên các endpoint web `change/get_messages` của trang |
 | Boomlify Edu Temp Mail | `boomlify` | Dùng public API `v1.boomlify.com`, mặc định chặn các domain hiện đã biết là không phù hợp với DeepSeek |
 | Nullsto | `nullsto` | Trích cấu hình API kiểu Supabase từ frontend của trang để tạo hộp thư |
 | Cloudflare Mail Routing | `cfrouting` | Không dùng Worker; tạo bí danh trên domain đã route qua Cloudflare và đọc thư từ hộp thư đích qua IMAP |
