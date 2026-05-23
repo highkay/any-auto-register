@@ -273,9 +273,11 @@ def _prepare_register_request(req: RegisterTaskRequest) -> RegisterTaskRequest:
     req_data["extra"] = deepcopy(req_data.get("extra") or {})
     prepared = RegisterTaskRequest(**req_data)
 
-    mail_provider = prepared.extra.get("mail_provider") or config_store.get(
-        "mail_provider", ""
-    )
+    mail_provider = str(
+        prepared.extra.get("mail_provider") or config_store.get("mail_provider", "")
+    ).strip().lower()
+    if mail_provider:
+        prepared.extra["mail_provider"] = mail_provider
     if mail_provider == "luckmail":
         platform = prepared.platform
         if platform in ("tavily", "openblocklabs"):
@@ -464,13 +466,16 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 provider=_base_extra.get("mail_provider", "luckmail"),
                 extra=_base_extra,
                 proxy=proxy,
+                platform=req.platform,
             )
 
         def _do_one(i: int):
             nonlocal next_start_time
             _proxy = None
+            _mailbox = None
             current_email = req.email or ""
             attempt_id: int | None = None
+            attempt_succeeded = False
             try:
                 control.checkpoint()
                 attempt_id = control.start_attempt()
@@ -561,6 +566,9 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                                 merged_extra.get("luckmail_base_url"),
                             )
                 saved_account = save_account(account)
+                if hasattr(_mailbox, "mark_current_account_registered"):
+                    _mailbox.mark_current_account_registered()
+                attempt_succeeded = True
                 if _proxy:
                     _proxy_pool.report_success(_proxy)
                 _log(task_id, f"[OK] 注册成功: {account.email}")
@@ -596,6 +604,8 @@ def _run_register(task_id: str, req: RegisterTaskRequest):
                 )
                 return AttemptResult.failed(str(e))
             finally:
+                if not attempt_succeeded and _mailbox is not None and hasattr(_mailbox, "release_current_account"):
+                    _mailbox.release_current_account()
                 control.finish_attempt(attempt_id)
 
         from concurrent.futures import CancelledError, ThreadPoolExecutor, as_completed

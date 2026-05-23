@@ -20,8 +20,6 @@ _SUPABASE_URL_RE = re.compile(r"(https://[a-z0-9]+\.supabase\.co)", flags=re.IGN
 _JWT_RE = re.compile(
     r"(eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,})"
 )
-
-
 def _normalize_domain(value: Any) -> str:
     return str(value or "").strip().lower().lstrip("@").rstrip(".")
 
@@ -39,12 +37,6 @@ def _extract_email(text: str) -> str:
 
 
 class BoomlifySessionClient:
-    DEFAULT_BLOCKED_DOMAINS = {
-        "bscse.okcx.edu.rs",
-        "bseee.okcx.edu.rs",
-        "usa.priyo.edu.pl",
-    }
-
     def __init__(
         self,
         *,
@@ -88,15 +80,9 @@ class BoomlifySessionClient:
                 if _normalize_domain(item.get("domain")) == target_domain:
                     return item
             raise RuntimeError(f"Boomlify 不支持指定域名: {target_domain}")
-
-        available = [
-            item
-            for item in domains
-            if _normalize_domain(item.get("domain")) not in self.DEFAULT_BLOCKED_DOMAINS
-        ]
-        if not available:
-            raise RuntimeError("Boomlify 当前没有未屏蔽的可用域名")
-        return random.choice(available)
+        if not domains:
+            raise RuntimeError("Boomlify 当前没有可用域名")
+        return random.choice(domains)
 
     def generate_random_email(self, *, domain: str = "") -> str:
         target = self._pick_domain(domain)

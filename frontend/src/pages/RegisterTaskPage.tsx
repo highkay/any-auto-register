@@ -80,6 +80,10 @@ export default function RegisterTaskPage() {
         cloudmail_domain: cfg.cloudmail_domain || '',
         cloudmail_subdomain: cfg.cloudmail_subdomain || '',
         cloudmail_timeout: cfg.cloudmail_timeout || 30,
+        outlookemail_base_url: cfg.outlookemail_base_url || '',
+        outlookemail_password: cfg.outlookemail_password || '',
+        outlookemail_api_key: cfg.outlookemail_api_key || '',
+        outlookemail_group_id: cfg.outlookemail_group_id || '1',
         outlook_backend: cfg.outlook_backend || 'graph',
         laoudo_auth: cfg.laoudo_auth || '',
         laoudo_email: cfg.laoudo_email || '',
@@ -179,6 +183,10 @@ export default function RegisterTaskPage() {
       cloudmail_domain: values.cloudmail_domain,
       cloudmail_subdomain: values.cloudmail_subdomain,
       cloudmail_timeout: values.cloudmail_timeout,
+      outlookemail_base_url: values.outlookemail_base_url,
+      outlookemail_password: values.outlookemail_password,
+      outlookemail_api_key: values.outlookemail_api_key,
+      outlookemail_group_id: values.outlookemail_group_id,
       outlook_backend: values.outlook_backend,
       duckmail_api_url: values.duckmail_api_url,
       duckmail_provider_url: values.duckmail_provider_url,
@@ -303,6 +311,7 @@ export default function RegisterTaskPage() {
         gptmail_base_url: 'https://mail.chatgpt.org.uk',
         gptmail_mode: 'api',
         cloudmail_timeout: 30,
+        outlookemail_group_id: '1',
         count: 1,
         concurrency: 1,
         register_delay_seconds: 0,
@@ -450,6 +459,7 @@ export default function RegisterTaskPage() {
                 { value: 'freemail', label: 'Freemail' },
                 { value: 'laoudo', label: 'Laoudo' },
                 { value: 'cfworker', label: 'CF Worker' },
+                { value: 'outlookemail', label: 'OutlookEmail（远端邮箱池）' },
               ]}
             />
           </Form.Item>
@@ -476,6 +486,39 @@ export default function RegisterTaskPage() {
                 ]}
               />
             </Form.Item>
+          )}
+          {mailProvider === 'outlookemail' && (
+            <>
+              <Form.Item
+                name="outlookemail_base_url"
+                label="实例地址"
+                rules={[{ required: true, message: '请输入 OutlookEmail 实例地址' }]}
+              >
+                <Input placeholder="http://192.168.1.18:5000" />
+              </Form.Item>
+              <Form.Item
+                name="outlookemail_password"
+                label="登录密码"
+                rules={[{ required: true, message: '请输入 OutlookEmail 登录密码' }]}
+              >
+                <Input.Password placeholder="admin123" />
+              </Form.Item>
+              <Form.Item
+                name="outlookemail_api_key"
+                label="对外 API Key"
+                rules={[{ required: true, message: '请输入 OutlookEmail 对外 API Key' }]}
+              >
+                <Input.Password placeholder="e16df..." />
+              </Form.Item>
+              <Form.Item
+                name="outlookemail_group_id"
+                label="邮箱分组 ID"
+                rules={[{ required: true, message: '请输入 OutlookEmail 邮箱分组 ID' }]}
+                extra="只会从该分组内取邮箱；同一平台注册成功后会加入本地黑名单，不再重复获取。"
+              >
+                <Input placeholder="1" />
+              </Form.Item>
+            </>
           )}
           {mailProvider === 'skymail' && (
             <>

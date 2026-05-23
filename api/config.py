@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.config_store import config_store
+from core.platform_email_domains import resolve_platform_blocked_email_domains
 from services.mail_imports import MailImportExecuteRequest, MailImportSnapshotRequest, mail_import_registry
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -82,6 +83,10 @@ CONFIG_KEYS = [
     "cfworker_random_subdomain",
     "cfworker_random_name_subdomain",
     "cfworker_fingerprint",
+    "outlookemail_base_url",
+    "outlookemail_password",
+    "outlookemail_api_key",
+    "outlookemail_group_id",
     "smstome_cookie",
     "smstome_country_slugs",
     "smstome_phone_attempts",
@@ -130,11 +135,15 @@ CONFIG_KEYS = [
     "grok2api_app_key",
     "grok2api_pool",
     "grok2api_quota",
+    "grok_blocked_email_domains",
     "kiro_manager_path",
     "kiro_manager_exe",
     "qwen_cpa_enabled",
     "qwen_cpa_api_url",
     "qwen_cpa_api_key",
+    "qwen_blocked_email_domains",
+    "chatgpt_blocked_email_domains",
+    "deepseek_blocked_email_domains",
     "external_apps_update_mode",
     "contribution_enabled",
     "contribution_server_url",
@@ -191,6 +200,8 @@ def get_config():
         all_cfg["nullsto_base_url"] = "https://nullsto.edu.pl"
     if not all_cfg.get("luckmail_base_url"):
         all_cfg["luckmail_base_url"] = "https://mails.luckyous.com/"
+    if not all_cfg.get("outlookemail_group_id"):
+        all_cfg["outlookemail_group_id"] = "1"
     if not str(all_cfg.get("contribution_enabled", "") or "").strip():
         all_cfg["contribution_enabled"] = "0"
     if not all_cfg.get("contribution_server_url"):
@@ -220,6 +231,10 @@ def get_config():
     if not all_cfg.get("deepseek_pow_worker_url"):
         all_cfg["deepseek_pow_worker_url"] = (
             "https://fe-static.deepseek.com/chat/static/33614.570c5fac7d.js"
+        )
+    if not str(all_cfg.get("deepseek_blocked_email_domains", "") or "").strip():
+        all_cfg["deepseek_blocked_email_domains"] = ",".join(
+            resolve_platform_blocked_email_domains("deepseek")
         )
     if not str(all_cfg.get("deepseek_ds2api_enabled", "") or "").strip():
         all_cfg["deepseek_ds2api_enabled"] = "0"

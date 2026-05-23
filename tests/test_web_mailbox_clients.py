@@ -192,20 +192,18 @@ class LivewireMailboxClientCompatibilityTests(unittest.TestCase):
         self.assertEqual(create_updates[1]["payload"]["method"], "create")
 
 
-
 class BoomlifySessionClientTests(unittest.TestCase):
     @patch("core.web_mailbox_clients.httpx.Client")
-    def test_generate_random_email_skips_default_blocked_domains(self, mock_client_cls):
+    def test_generate_random_email_uses_public_domain_pool_without_provider_defaults(self, mock_client_cls):
         fake_client = _FakeHttpxClient(
             [
                 _FakeResponse(
                     json_data=[
-                        {"id": "blocked-1", "domain": "bscse.okcx.edu.rs", "is_active": 1},
-                        {"id": "allowed-1", "domain": "dev.nondon.store", "is_active": 1},
+                        {"id": "domain-1", "domain": "bscse.okcx.edu.rs", "is_active": 1},
                     ]
                 ),
                 _FakeResponse(
-                    json_data={"email": {"address": "abc123@dev.nondon.store"}}
+                    json_data={"email": {"address": "abc123@bscse.okcx.edu.rs"}}
                 ),
             ]
         )
@@ -215,10 +213,10 @@ class BoomlifySessionClientTests(unittest.TestCase):
         with patch("core.web_mailbox_clients._generate_local_part", return_value="abc123"):
             result = client.generate_random_email()
 
-        self.assertEqual(result, "abc123@dev.nondon.store")
+        self.assertEqual(result, "abc123@bscse.okcx.edu.rs")
         self.assertEqual(
             fake_client.post_calls[0]["json"],
-            {"email": "abc123@dev.nondon.store", "domainId": "allowed-1"},
+            {"email": "abc123@bscse.okcx.edu.rs", "domainId": "domain-1"},
         )
 
 
@@ -228,7 +226,10 @@ class NullstoSessionClientTests(unittest.TestCase):
         fake_client = _FakeHttpxClient(
             [
                 _FakeResponse(
-                    text='<html><head><script type="module" crossorigin src="/assets/index-test.js"></script></head></html>'
+                    text=(
+                        '<html><head><script type="module" crossorigin '
+                        'src="/assets/index-test.js"></script></head></html>'
+                    )
                 ),
                 _FakeResponse(
                     text=(

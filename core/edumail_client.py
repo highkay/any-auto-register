@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 _DEFAULT_BASE_URL = "https://edumail.su"
+_DEFAULT_HTTP_TIMEOUT = 45.0
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -39,7 +40,7 @@ class EduMailSessionClient:
                 follow_redirects=True,
                 http2=True,
                 trust_env=False,
-                timeout=20.0,
+                timeout=_DEFAULT_HTTP_TIMEOUT,
                 headers={
                     "user-agent": _USER_AGENT,
                     "accept-language": "en-US,en;q=0.9",

@@ -2,8 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from core.base_mailbox import TempMailLolMailbox, create_mailbox
-from core.proxy_utils import MAILBOX_PROXY_BYPASS_CONFIG
-from core.proxy_utils import create_mailbox_requests_session
+from core.proxy_utils import MAILBOX_PROXY_BYPASS_CONFIG, create_mailbox_requests_session
 
 
 class MailboxProxyPolicyTests(unittest.TestCase):
@@ -119,6 +118,15 @@ class MailboxProxyPolicyTests(unittest.TestCase):
                 },
             ),
             (
+                "outlookemail",
+                {
+                    "outlookemail_base_url": "http://192.168.1.18:5000",
+                    "outlookemail_password": "admin123",
+                    "outlookemail_api_key": "test-key",
+                    "outlookemail_group_id": "1",
+                },
+            ),
+            (
                 "cfrouting",
                 {
                     "cfrouting_domain": "mail.example",
@@ -155,6 +163,10 @@ class MailboxProxyPolicyTests(unittest.TestCase):
 
         self.assertFalse(session.trust_env)
         self.assertEqual(session.proxies, MAILBOX_PROXY_BYPASS_CONFIG)
+
+    def test_unknown_provider_raises(self):
+        with self.assertRaisesRegex(ValueError, "Unsupported mailbox provider"):
+            create_mailbox("not-a-real-provider", extra={})
 
     @patch.dict("os.environ", {"ALL_PROXY": "http://127.0.0.1:7899"}, clear=True)
     def test_mailbox_bypass_config_blocks_all_proxy_in_requests_merge(self):

@@ -43,6 +43,7 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'Cloudflare 邮件路由（直转邮箱）', value: 'cfrouting' },
     { label: 'Freemail（自建 CF Worker）', value: 'freemail' },
     { label: 'CF Worker（自建域名）', value: 'cfworker' },
+    { label: 'OutlookEmail（远端邮箱池）', value: 'outlookemail' },
   ],
   maliapi_auto_domain_strategy: [
     { label: 'balanced', value: 'balanced' },
@@ -146,6 +147,16 @@ const TAB_ITEMS = [
         ],
       },
       {
+        title: 'OutlookEmail',
+        desc: '对接远端 OutlookEmail 实例的普通邮箱池；按平台维护本地成功黑名单，避免同一平台重复取到同一个邮箱。',
+        fields: [
+          { key: 'outlookemail_base_url', label: '实例地址', placeholder: 'http://192.168.1.18:5000' },
+          { key: 'outlookemail_password', label: '登录密码', secret: true, placeholder: 'admin123' },
+          { key: 'outlookemail_api_key', label: '对外 API Key', secret: true, placeholder: 'e16df...' },
+          { key: 'outlookemail_group_id', label: '邮箱分组 ID', placeholder: '1' },
+        ],
+      },
+      {
         title: 'MoeMail',
         desc: '自动注册账号并生成临时邮箱',
         fields: [
@@ -229,7 +240,7 @@ const TAB_ITEMS = [
       },
       {
         title: 'Boomlify Edu Temp Mail',
-        desc: '走公开 API v1.boomlify.com；默认屏蔽当前已知被 DeepSeek 拒绝的域名，仅在未指定域名时生效。',
+        desc: '走公开 API v1.boomlify.com；若某个平台需要避开特定后缀，请到对应的平台配置里维护邮箱黑名单。',
         fields: [
           { key: 'boomlify_base_url', label: '站点地址', placeholder: 'https://boomlify.com/en/edu-temp-mail' },
           { key: 'boomlify_api_base', label: 'API Base', placeholder: 'https://v1.boomlify.com' },
@@ -376,6 +387,13 @@ const TAB_ITEMS = [
           { key: 'smstome_sync_max_pages_per_country', label: '每国同步页数', placeholder: '5' },
         ],
       },
+      {
+        title: '邮箱黑名单',
+        desc: '仅对 ChatGPT 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。',
+        fields: [
+          { key: 'chatgpt_blocked_email_domains', label: '禁用邮箱后缀', placeholder: 'bad.example.com, blocked.mail' },
+        ],
+      },
     ],
   },
   {
@@ -408,6 +426,13 @@ const TAB_ITEMS = [
           { key: 'grok2api_quota', label: 'Quota（可选）', placeholder: '留空按池默认值' },
         ],
       },
+      {
+        title: '邮箱黑名单',
+        desc: '仅对 Grok 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。本次任务遇到“邮箱域名被拒绝”时也会临时加入黑名单。',
+        fields: [
+          { key: 'grok_blocked_email_domains', label: '禁用邮箱后缀', placeholder: 'blocked.example.com, disposable.mail' },
+        ],
+      },
     ],
   },
   {
@@ -436,6 +461,13 @@ const TAB_ITEMS = [
           { key: 'deepseek_ds2api_enabled', label: '启用自动导入', type: 'boolean' },
           { key: 'deepseek_ds2api_url', label: 'Admin URL', placeholder: 'http://127.0.0.1:5001/admin' },
           { key: 'deepseek_ds2api_admin_key', label: 'Admin Key', secret: true },
+        ],
+      },
+      {
+        title: '邮箱黑名单',
+        desc: '仅对 DeepSeek 自动分配邮箱生效；默认已带上当前已知会被 DeepSeek 拒绝的后缀，可继续追加。',
+        fields: [
+          { key: 'deepseek_blocked_email_domains', label: '禁用邮箱后缀', placeholder: 'apple.edu.pl, imail.edu.vn' },
         ],
       },
     ],
@@ -528,6 +560,13 @@ const TAB_ITEMS = [
           { key: 'qwen_cpa_api_key', label: 'API Key', secret: true, placeholder: '留空则使用 ChatGPT CPA Key' },
         ],
       },
+      {
+        title: '邮箱黑名单',
+        desc: '仅对 Qwen 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。',
+        fields: [
+          { key: 'qwen_blocked_email_domains', label: '禁用邮箱后缀', placeholder: 'blocked.example.com, tempmail.example' },
+        ],
+      },
     ],
   },
   {
@@ -588,6 +627,7 @@ const MAILBOX_SECTION_FIELD_KEY_BY_PROVIDER: Record<string, string> = {
   opentrashmail: 'opentrashmail_api_url',
   duckmail: 'duckmail_api_url',
   cfworker: 'cfworker_api_url',
+  outlookemail: 'outlookemail_base_url',
   luckmail: 'luckmail_base_url',
 }
 

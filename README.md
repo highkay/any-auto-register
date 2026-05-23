@@ -66,7 +66,7 @@
 
 - **多平台账号注册与管理**：统一的账号列表、详情、导入、导出、删除、批量操作
 - **多执行器模式**：纯协议、无头浏览器、有头浏览器
-- **多邮箱服务接入**：支持内置、第三方、自建 Worker 邮箱等多种方案
+- **多邮箱服务接入**：支持内置、第三方、自建 Worker 邮箱，以及远端 OutlookEmail 普通邮箱池等多种方案
 - **验证码支持**：YesCaptcha、本地 Turnstile Solver（Camoufox）
 - **代理能力**：代理池轮询、代理状态维护、注册过程代理接入
 - **批量注册**：支持注册数量、并发数、每个账号启动延迟设置
@@ -149,14 +149,35 @@
 | YYDS Mail / MaliAPI | `maliapi` | 支持域名与自动域名策略 |
 | GPTMail | `gptmail` | 基于 GPTMail API 生成临时邮箱并轮询邮件，支持已知域名时本地拼装随机地址 |
 | EduMail.su | `edumail` | Livewire 网页邮箱，支持随机地址与可选指定域名 |
-| Imail.edu.vn | `imail` | Livewire 教育邮箱，默认会跳过已知被 DeepSeek 拒绝的域名 |
-| Boomlify Edu Temp Mail | `boomlify` | 走 `v1.boomlify.com` 公共 API，默认屏蔽当前已知不适合 DeepSeek 的域名 |
+| Imail.edu.vn | `imail` | Livewire 教育邮箱，支持随机地址与可选指定域名；若某个平台需要避开特定后缀，请到该平台的邮箱黑名单配置里维护 |
+| Boomlify Edu Temp Mail | `boomlify` | 走 `v1.boomlify.com` 公共 API；若某个平台需要避开特定后缀，请到该平台的邮箱黑名单配置里维护 |
 | Nullsto | `nullsto` | 通过站点前端配置提取 Supabase 接口并生成邮箱 |
 | Cloudflare 邮件路由 | `cfrouting` | 不走 Worker；假设你已在 Cloudflare 配好邮件路由转发，本项目只负责生成别名并直接轮询目标邮箱 IMAP，目标邮箱可用 QQ 或个人 Gmail |
 | DuckMail | `duckmail` | 临时邮箱方案 |
 | Freemail | `freemail` | 自建邮箱服务 |
 | Laoudo | `laoudo` | 固定邮箱方案 |
 | CF Worker | `cfworker` | Cloudflare Worker 自建邮箱 |
+| OutlookEmail | `outlookemail` | 对接远端 OutlookEmail 实例的普通邮箱池；从指定分组取邮箱，失败释放租约，注册成功后按平台写入本地黑名单 |
+
+### OutlookEmail 远端邮箱池
+
+`outlookemail` 适合已经有一套独立邮箱管理端的场景。它不是“临时邮箱生成器”，而是复用远端 OutlookEmail 实例里已有的普通邮箱池。
+
+当前实现行为：
+
+- 取号来源：远端实例指定 `group_id` 下的普通邮箱，走 `/api/external/accounts`
+- 收信轮询：走 `/api/external/emails`
+- 邮件详情 / 原文：走登录 session 下的内部接口 `/api/email/<email>/<message_id>` 和 `/raw`
+- 失败语义：当前注册尝试失败时，会释放本地租约，后续任务仍可再次获取该邮箱
+- 成功语义：当前平台注册成功后，会把该邮箱写入本地按平台黑名单
+- 黑名单作用域：只对当前平台生效，例如同一邮箱在 `grok` 成功后不会再分配给 `grok`，但仍可分配给 `deepseek`
+
+需要配置的字段：
+
+- `outlookemail_base_url`
+- `outlookemail_password`
+- `outlookemail_api_key`
+- `outlookemail_group_id`
 
 ### Cloudflare 邮件路由（QQ / Gmail）
 

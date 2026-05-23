@@ -154,6 +154,7 @@ class EduMailSessionClientTests(unittest.TestCase):
         result = client.generate_random_email()
 
         self.assertEqual(result, email)
+        self.assertEqual(mock_client_cls.call_args.kwargs["timeout"], 45.0)
         self.assertEqual(fake_client.get_calls[0]["url"], "https://edumail.su/")
         self.assertEqual(fake_client.get_calls[1]["url"], "https://edumail.su/mailbox")
         random_update = fake_client.post_calls[0]["json"]["updates"][0]
@@ -371,7 +372,7 @@ class EduMailMailboxTests(unittest.TestCase):
 
         self.assertEqual(ids, {"1001", "m-2"})
 
-    def test_imail_mailbox_uses_default_blocked_domains_when_domain_not_specified(self):
+    def test_imail_mailbox_generates_email_without_provider_level_blocklist(self):
         mailbox = ImailMailbox(api_url="https://imail.edu.vn")
         fake_client = mock.Mock()
         fake_client.generate_random_email.return_value = "demo123@mailer.edu.pl"
@@ -380,10 +381,7 @@ class EduMailMailboxTests(unittest.TestCase):
             account = mailbox.get_email()
 
         self.assertEqual(account.email, "demo123@mailer.edu.pl")
-        fake_client.generate_random_email.assert_called_once_with(
-            domain="",
-            blocked_domains={"apple.edu.pl", "imail.edu.vn"},
-        )
+        fake_client.generate_random_email.assert_called_once_with(domain="")
 
 
 if __name__ == "__main__":

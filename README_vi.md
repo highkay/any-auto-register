@@ -58,7 +58,7 @@ Ghi chú:
 
 - **Quản lý & đăng ký tài khoản đa nền tảng**: Danh sách tài khoản thống nhất, chi tiết, nhập/xuất, xóa, thao tác hàng loạt
 - **Nhiều chế độ thực thi**: Giao thức thuần, trình duyệt không giao diện (headless), trình duyệt có giao diện (headed)
-- **Tích hợp nhiều dịch vụ email**: Tích hợp sẵn, bên thứ 3,自建 Worker Email và nhiều giải pháp khác
+- **Tích hợp nhiều dịch vụ email**: Tích hợp sẵn, bên thứ 3, email Worker tự host, pool mailbox OutlookEmail từ xa và nhiều giải pháp khác
 - **Hỗ trợ Captcha**: YesCaptcha, Turnstile Solver cục bộ (Camoufox)
 - **Hỗ trợ Proxy**: Luân phiên pool proxy, duy trì trạng thái proxy, tích hợp proxy trong quá trình đăng ký
 - **Đăng ký hàng loạt**: Hỗ trợ cài đặt số lượng đăng ký, số lượng đồng thời, độ trễ khởi động giữa mỗi tài khoản
@@ -139,14 +139,35 @@ Hộp thoại đăng ký trong phần Quản lý nền tảng sẽ dùng lại m
 | YYDS Mail / MaliAPI | `maliapi` | Hỗ trợ chiến lược domain tự động |
 | GPTMail | `gptmail` | Tạo email tạm thời qua GPTMail API và xoay vòng, hỗ trợ ghép ngẫu nhiên khi đã biết domain |
 | EduMail.su | `edumail` | Hộp thư web Livewire, hỗ trợ tạo địa chỉ ngẫu nhiên và có thể khóa domain nếu cần |
-| Imail.edu.vn | `imail` | Hộp thư giáo dục Livewire, mặc định bỏ qua các domain đã biết là bị DeepSeek từ chối |
-| Boomlify Edu Temp Mail | `boomlify` | Dùng public API `v1.boomlify.com`, mặc định chặn các domain hiện đã biết là không phù hợp với DeepSeek |
+| Imail.edu.vn | `imail` | Hộp thư giáo dục Livewire, hỗ trợ địa chỉ ngẫu nhiên và khóa domain khi cần; nếu một nền tảng cần tránh suffix cụ thể, hãy cấu hình trong blacklist domain email của nền tảng đó |
+| Boomlify Edu Temp Mail | `boomlify` | Dùng public API `v1.boomlify.com`; nếu một nền tảng cần tránh suffix cụ thể, hãy cấu hình trong blacklist domain email của nền tảng đó |
 | Nullsto | `nullsto` | Trích cấu hình API kiểu Supabase từ frontend của trang để tạo hộp thư |
 | Cloudflare Mail Routing | `cfrouting` | Không dùng Worker; tạo bí danh trên domain đã route qua Cloudflare và đọc thư từ hộp thư đích qua IMAP |
 | DuckMail | `duckmail` | Email tạm thời |
 | Freemail | `freemail` | Dịch vụ email tự xây dựng |
 | Laoudo | `laoudo` | Email cố định |
-| CF Worker | `cfworker` |自建 email qua Cloudflare Worker |
+| CF Worker | `cfworker` | Email tự host qua Cloudflare Worker |
+| OutlookEmail | `outlookemail` | Kết nối tới pool mailbox thường của một instance OutlookEmail từ xa; lỗi thì trả lease, thành công thì ghi blacklist cục bộ theo từng nền tảng |
+
+### Pool mailbox OutlookEmail từ xa
+
+`outlookemail` phù hợp khi bạn đã có một dịch vụ quản lý mailbox riêng. Nó không phải là trình tạo email tạm thời. Thay vào đó, nó tái sử dụng các mailbox thường đã tồn tại trong instance OutlookEmail từ xa.
+
+Hành vi hiện tại:
+
+- Nguồn mailbox: mailbox thường trong `group_id` đã cấu hình ở instance từ xa, qua `/api/external/accounts`
+- Poll danh sách thư: `/api/external/emails`
+- Chi tiết / raw email: endpoint nội bộ có session `/api/email/<email>/<message_id>` và `/raw`
+- Khi thất bại: lease cục bộ sẽ được trả lại để tác vụ sau vẫn có thể lấy lại mailbox đó
+- Khi thành công: sau khi đăng ký xong, mailbox sẽ được ghi vào blacklist cục bộ cho đúng nền tảng
+- Phạm vi blacklist: chỉ áp dụng cho từng nền tảng. Ví dụ mailbox đã dùng thành công cho `grok` sẽ không được cấp lại cho `grok`, nhưng vẫn có thể cấp cho `deepseek`
+
+Các khóa cấu hình cần điền:
+
+- `outlookemail_base_url`
+- `outlookemail_password`
+- `outlookemail_api_key`
+- `outlookemail_group_id`
 
 ### Ghi chú về email cho Kiro
 

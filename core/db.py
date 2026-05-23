@@ -1,9 +1,10 @@
 """数据库模型 - SQLite via SQLModel"""
-from datetime import datetime, timezone
-import os
-from typing import Optional
-from sqlmodel import Field, SQLModel, create_engine, Session, select
 import json
+import os
+from datetime import datetime, timezone
+from typing import Optional
+
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 
 def _utcnow():
@@ -99,6 +100,17 @@ class ProxyModel(SQLModel, table=True):
     last_checked: Optional[datetime] = None
 
 
+class MailboxPlatformBlacklistModel(SQLModel, table=True):
+    __tablename__ = "mailbox_platform_blacklists"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider: str = Field(index=True)
+    platform: str = Field(index=True)
+    pool_key: str = Field(index=True)
+    email: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow, index=True)
+
+
 def save_account(account) -> 'AccountModel':
     """从 base_platform.Account 存入数据库（同平台同邮箱则更新）"""
     with Session(engine) as session:
@@ -154,7 +166,9 @@ def _migrate_outlook_accounts_schema() -> None:
                 "ALTER TABLE outlook_accounts ADD COLUMN mailapi_url TEXT DEFAULT ''"
             )
         conn.exec_driver_sql(
-            "UPDATE outlook_accounts SET account_type = 'microsoft_oauth' WHERE account_type IS NULL OR TRIM(account_type) = ''"
+            "UPDATE outlook_accounts "
+            "SET account_type = 'microsoft_oauth' "
+            "WHERE account_type IS NULL OR TRIM(account_type) = ''"
         )
         conn.exec_driver_sql(
             "UPDATE outlook_accounts SET mailapi_url = '' WHERE mailapi_url IS NULL"

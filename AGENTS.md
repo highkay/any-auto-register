@@ -7,7 +7,7 @@
 `any-auto-register` 是一个多平台账号自动注册与管理系统，当前由以下几层组成：
 
 - 后端：FastAPI 应用，负责任务编排、账号管理、配置管理、平台插件加载、邮件导入、外部服务管理、认证。
-- 数据层：SQLite + SQLModel，保存账号、任务、代理、微软邮箱导入账号、配置项。
+- 数据层：SQLite + SQLModel，保存账号、任务、代理、微软邮箱导入账号、配置项，以及按平台维度的邮箱黑名单记录。
 - 前端：React + TypeScript + Vite 单页应用，构建后由 FastAPI 直接托管。
 - 桌面壳：Electron，生产模式下拉起打包后的后端并加载本地 Web UI。
 - 自动化能力：Playwright / Camoufox / Patchright、协议请求执行器、验证码解题器、本地 Turnstile Solver。
@@ -62,6 +62,7 @@
 - 账号 CRUD、导入、导出、批量删除、批量有效性检测。
 - 注册任务并发执行、实时日志、历史任务持久化、停止当前任务、跳过当前账号。
 - 多种邮箱 provider 接入。
+- 支持远端 OutlookEmail 普通邮箱池接入，并按平台持久化避免同平台重复消费同一邮箱。
 - 本地导入邮箱池并在运行时复用。
 - 多种执行器模式：`protocol` / `headless` / `headed`。
 - 多种验证码方案：`yescaptcha` / `local_solver` / `manual`。
@@ -103,8 +104,9 @@
 10. 绑定任务控制器和日志函数到平台与邮箱对象。
 11. 调用平台插件的 `register(email, password)`。
 12. 成功后写入 `accounts` 表，必要时做邮箱域名策略校验。
-13. 后台线程触发 `services.external_sync.sync_account()` 做自动回填。
-14. 持续把日志、进度、错误、控制状态同步到 `task_runs`。
+13. 若邮箱 provider 支持租约/成功封存钩子（例如 `outlookemail`），任务成功后会先调用 provider 的成功回调，把当前邮箱加入本地按平台黑名单；失败时会释放当前租约。
+14. 后台线程触发 `services.external_sync.sync_account()` 做自动回填。
+15. 持续把日志、进度、错误、控制状态同步到 `task_runs`。
 
 ### 4.3 任务控制流程
 
@@ -309,6 +311,9 @@
   - 任务运行快照持久化表。
 - `OutlookAccountModel`
   - 微软邮箱导入账号表。
+- `MailboxPlatformBlacklistModel`
+  - 记录某个 mailbox provider 在某个平台上已经成功消费过的邮箱。
+  - 当前主要用于 `outlookemail` 远端邮箱池，避免同平台重复取到相同邮箱。
 - `ProxyModel`
   - 代理池表。
 - `ConfigItem`
@@ -422,11 +427,17 @@
 - 邮箱流量默认绕过注册代理和环境代理。
 - 这条策略由 `core/proxy_utils.py::build_mailbox_proxy_config()` 和 `create_mailbox_requests_session()` 统一保证。
 - 对应回归测试在 `tests/test_mailbox_proxy_policy.py`。
+- `outlookemail` 不是“生成临时邮箱”的 provider。
+  - 它从远端 OutlookEmail 实例指定分组的普通邮箱池里挑选邮箱。
+  - 收件列表走对外 API `/api/external/accounts` + `/api/external/emails`。
+  - 邮件详情 / 原文走登录 session 下的内部接口。
+  - 同一个邮箱在某个平台注册成功后，只会对该平台加入本地黑名单，不会全局禁用到其他平台。
 
 这意味着：
 
 - 新增 mailbox provider 时，不要直接复用注册代理的 requests session。
 - 新增 provider 后应补 mailbox proxy policy 测试。
+- 如果 provider 复用了远端邮箱池或有“租约”概念，还要检查 `api/tasks.py` 的成功 / 失败生命周期是否需要额外钩子。
 
 ### 8.4 邮件导入策略接口
 
@@ -623,6 +634,7 @@
 5. `frontend/src/pages/Accounts.tsx`
 6. `frontend/src/pages/RegisterTaskPage.tsx`
 7. `tests/test_mailbox_proxy_policy.py`
+8. 若 provider 带远端池租约或成功后不可重复消费语义，再检查 `api/tasks.py` 与 `core/db.py`
 
 ### 11.3 新增一个邮件导入策略
 

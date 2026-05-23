@@ -58,7 +58,7 @@ Notes:
 
 - **Multi-platform Account Registration & Management**: Unified account list, details, import/export, deletion, batch operations
 - **Multiple Executor Modes**: Pure protocol, headless browser, headed browser
-- **Multiple Email Service Integration**: Built-in, third-party, self-hosted Worker Email, and more
+- **Multiple Email Service Integration**: Built-in, third-party, self-hosted Worker Email, remote OutlookEmail mailbox pools, and more
 - **Captcha Support**: YesCaptcha, Local Turnstile Solver (Camoufox)
 - **Proxy Capability**: Proxy pool rotation, proxy state maintenance, proxy integration during registration
 - **Batch Registration**: Supports setting registration count, concurrency, and startup delay per account
@@ -139,14 +139,35 @@ The registration dialog in Platform Management reuses the mailbox provider selec
 | YYDS Mail / MaliAPI | `maliapi` | Supports domain and automatic domain strategy |
 | GPTMail | `gptmail` | Generates temporary emails via GPTMail API with rotation, supports random address assembly when domains are known |
 | EduMail.su | `edumail` | Livewire web mailbox with random address generation and optional domain pinning |
-| Imail.edu.vn | `imail` | Livewire education mailbox, skips domains currently known to be rejected by DeepSeek by default |
-| Boomlify Edu Temp Mail | `boomlify` | Uses the `v1.boomlify.com` public API and blocks currently known DeepSeek-incompatible domains by default |
+| Imail.edu.vn | `imail` | Livewire education mailbox with random address generation and optional domain pinning; if a platform must avoid certain suffixes, maintain them in that platform's blocked email domain config |
+| Boomlify Edu Temp Mail | `boomlify` | Uses the `v1.boomlify.com` public API; if a platform must avoid certain suffixes, maintain them in that platform's blocked email domain config |
 | Nullsto | `nullsto` | Extracts the site's Supabase-facing API configuration from the frontend and generates mailboxes from it |
 | Cloudflare Mail Routing | `cfrouting` | Does not use a Worker; generates aliases for a Cloudflare-routed domain and polls the target mailbox via IMAP |
 | DuckMail | `duckmail` | Temporary email solution |
 | Freemail | `freemail` | Self-hosted email service |
 | Laoudo | `laoudo` | Fixed email solution |
 | CF Worker | `cfworker` | Self-hosted email via Cloudflare Worker |
+| OutlookEmail | `outlookemail` | Connects to a remote OutlookEmail instance's managed mailbox pool; releases the lease on failure and persists a platform-local blacklist after successful registration |
+
+### OutlookEmail Remote Mailbox Pool
+
+`outlookemail` is intended for setups that already maintain a separate mailbox management service. It is not a temporary mailbox generator. Instead, it reuses managed ordinary mailboxes from a remote OutlookEmail instance.
+
+Current behavior:
+
+- Mailbox source: ordinary mailboxes under the configured remote `group_id`, via `/api/external/accounts`
+- Inbox polling: `/api/external/emails`
+- Message detail / raw content: internal session-protected endpoints `/api/email/<email>/<message_id>` and `/raw`
+- Failure behavior: the local lease is released so later tasks can pick the mailbox again
+- Success behavior: after a registration succeeds, the mailbox is written into a local blacklist for that platform
+- Blacklist scope: platform-local only. For example, a mailbox consumed successfully by `grok` will no longer be allocated to `grok`, but can still be allocated to `deepseek`
+
+Required configuration keys:
+
+- `outlookemail_base_url`
+- `outlookemail_password`
+- `outlookemail_api_key`
+- `outlookemail_group_id`
 
 ### Kiro Email Notes
 
