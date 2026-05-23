@@ -19,6 +19,7 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons'
 import { ChatGPTRegistrationModeSwitch } from '@/components/ChatGPTRegistrationModeSwitch'
+import PhoneVerificationPanel from '@/components/settings/PhoneVerificationPanel'
 import { TaskLogPanel } from '@/components/TaskLogPanel'
 import { usePersistentChatGPTRegistrationMode } from '@/hooks/usePersistentChatGPTRegistrationMode'
 import { parseBooleanConfigValue } from '@/lib/configValueParsers'
@@ -58,6 +59,7 @@ export default function RegisterTaskPage() {
       const currentPlatform = form.getFieldValue('platform') || 'trae'
       const configMailProvider = String(cfg.mail_provider || 'luckmail')
       const isMailImportProvider = configMailProvider === 'microsoft' || configMailProvider === 'outlook' || configMailProvider === 'applemail'
+      const phoneVerificationProvider = cfg.phone_verification_provider || 'auto'
       form.setFieldsValue({
         executor_type: normalizeExecutorForPlatform(currentPlatform, cfg.default_executor),
         captcha_solver: cfg.default_captcha_solver || 'yescaptcha',
@@ -121,12 +123,43 @@ export default function RegisterTaskPage() {
         cfworker_random_subdomain: parseBooleanConfigValue(cfg.cfworker_random_subdomain),
         cfworker_random_name_subdomain: parseBooleanConfigValue(cfg.cfworker_random_name_subdomain),
         cfworker_fingerprint: cfg.cfworker_fingerprint || '',
+        phone_verification_provider: phoneVerificationProvider,
+        smstome_global_file: cfg.smstome_global_file || 'smstome_all_numbers.txt',
+        smstome_used_numbers_dir: cfg.smstome_used_numbers_dir || 'smstome_used',
+        smstome_task_name: cfg.smstome_task_name || 'chatgpt_add_phone',
         smstome_cookie: cfg.smstome_cookie || '',
         smstome_country_slugs: cfg.smstome_country_slugs || '',
         smstome_phone_attempts: cfg.smstome_phone_attempts || '',
         smstome_otp_timeout_seconds: cfg.smstome_otp_timeout_seconds || '',
         smstome_poll_interval_seconds: cfg.smstome_poll_interval_seconds || '',
         smstome_sync_max_pages_per_country: cfg.smstome_sync_max_pages_per_country || '',
+        five_sim_api_key: cfg.five_sim_api_key || '',
+        five_sim_product: cfg.five_sim_product || 'other',
+        five_sim_country: cfg.five_sim_country || '',
+        five_sim_operator: cfg.five_sim_operator || '',
+        five_sim_max_price: cfg.five_sim_max_price || '',
+        five_sim_phone_attempts: cfg.five_sim_phone_attempts || '',
+        five_sim_otp_timeout_seconds: cfg.five_sim_otp_timeout_seconds || '',
+        five_sim_poll_interval_seconds: cfg.five_sim_poll_interval_seconds || '',
+        hero_sms_api_key: cfg.hero_sms_api_key || '',
+        hero_sms_service: cfg.hero_sms_service || 'Kimi',
+        hero_sms_country: cfg.hero_sms_country || '',
+        hero_sms_operator: cfg.hero_sms_operator || '',
+        hero_sms_max_price: cfg.hero_sms_max_price || '',
+        hero_sms_phone_attempts: cfg.hero_sms_phone_attempts || '',
+        hero_sms_otp_timeout_seconds: cfg.hero_sms_otp_timeout_seconds || '',
+        hero_sms_poll_interval_seconds: cfg.hero_sms_poll_interval_seconds || '',
+        free_sms_tool_base_url: cfg.free_sms_tool_base_url || 'http://127.0.0.1:18000',
+        free_sms_tool_api_key: cfg.free_sms_tool_api_key || '',
+        free_sms_tool_app_slug: cfg.free_sms_tool_app_slug || 'chatgpt',
+        free_sms_tool_app_name: cfg.free_sms_tool_app_name || 'ChatGPT',
+        free_sms_tool_country_name: cfg.free_sms_tool_country_name || '',
+        free_sms_tool_provider_id: cfg.free_sms_tool_provider_id || '',
+        free_sms_tool_claim_ttl_minutes: cfg.free_sms_tool_claim_ttl_minutes || '10',
+        free_sms_tool_include_cooling: parseBooleanConfigValue(cfg.free_sms_tool_include_cooling),
+        free_sms_tool_phone_attempts: cfg.free_sms_tool_phone_attempts || '',
+        free_sms_tool_otp_timeout_seconds: cfg.free_sms_tool_otp_timeout_seconds || '',
+        free_sms_tool_poll_interval_seconds: cfg.free_sms_tool_poll_interval_seconds || '',
         luckmail_base_url: cfg.luckmail_base_url || 'https://mails.luckyous.com/',
         luckmail_api_key: cfg.luckmail_api_key || '',
         luckmail_email_type: cfg.luckmail_email_type || '',
@@ -204,12 +237,43 @@ export default function RegisterTaskPage() {
       cfworker_random_subdomain: values.cfworker_random_subdomain,
       cfworker_random_name_subdomain: values.cfworker_random_name_subdomain,
       cfworker_fingerprint: values.cfworker_fingerprint,
+      phone_verification_provider: values.phone_verification_provider,
+      smstome_global_file: values.smstome_global_file,
+      smstome_used_numbers_dir: values.smstome_used_numbers_dir,
+      smstome_task_name: values.smstome_task_name,
       smstome_cookie: values.smstome_cookie,
       smstome_country_slugs: values.smstome_country_slugs,
       smstome_phone_attempts: values.smstome_phone_attempts,
       smstome_otp_timeout_seconds: values.smstome_otp_timeout_seconds,
       smstome_poll_interval_seconds: values.smstome_poll_interval_seconds,
       smstome_sync_max_pages_per_country: values.smstome_sync_max_pages_per_country,
+      five_sim_api_key: values.five_sim_api_key,
+      five_sim_product: values.five_sim_product,
+      five_sim_country: values.five_sim_country,
+      five_sim_operator: values.five_sim_operator,
+      five_sim_max_price: values.five_sim_max_price,
+      five_sim_phone_attempts: values.five_sim_phone_attempts,
+      five_sim_otp_timeout_seconds: values.five_sim_otp_timeout_seconds,
+      five_sim_poll_interval_seconds: values.five_sim_poll_interval_seconds,
+      hero_sms_api_key: values.hero_sms_api_key,
+      hero_sms_service: values.hero_sms_service,
+      hero_sms_country: values.hero_sms_country,
+      hero_sms_operator: values.hero_sms_operator,
+      hero_sms_max_price: values.hero_sms_max_price,
+      hero_sms_phone_attempts: values.hero_sms_phone_attempts,
+      hero_sms_otp_timeout_seconds: values.hero_sms_otp_timeout_seconds,
+      hero_sms_poll_interval_seconds: values.hero_sms_poll_interval_seconds,
+      free_sms_tool_base_url: values.free_sms_tool_base_url,
+      free_sms_tool_api_key: values.free_sms_tool_api_key,
+      free_sms_tool_app_slug: values.free_sms_tool_app_slug,
+      free_sms_tool_app_name: values.free_sms_tool_app_name,
+      free_sms_tool_country_name: values.free_sms_tool_country_name,
+      free_sms_tool_provider_id: values.free_sms_tool_provider_id,
+      free_sms_tool_claim_ttl_minutes: values.free_sms_tool_claim_ttl_minutes,
+      free_sms_tool_include_cooling: values.free_sms_tool_include_cooling,
+      free_sms_tool_phone_attempts: values.free_sms_tool_phone_attempts,
+      free_sms_tool_otp_timeout_seconds: values.free_sms_tool_otp_timeout_seconds,
+      free_sms_tool_poll_interval_seconds: values.free_sms_tool_poll_interval_seconds,
       luckmail_base_url: values.luckmail_base_url,
       luckmail_api_key: values.luckmail_api_key,
       luckmail_email_type: values.luckmail_email_type,
@@ -312,6 +376,17 @@ export default function RegisterTaskPage() {
         gptmail_mode: 'api',
         cloudmail_timeout: 30,
         outlookemail_group_id: '1',
+        phone_verification_provider: 'auto',
+        smstome_global_file: 'smstome_all_numbers.txt',
+        smstome_used_numbers_dir: 'smstome_used',
+        smstome_task_name: 'chatgpt_add_phone',
+        five_sim_product: 'other',
+        hero_sms_service: 'Kimi',
+        free_sms_tool_base_url: 'http://127.0.0.1:18000',
+        free_sms_tool_app_slug: 'chatgpt',
+        free_sms_tool_app_name: 'ChatGPT',
+        free_sms_tool_claim_ttl_minutes: '10',
+        free_sms_tool_include_cooling: false,
         count: 1,
         concurrency: 1,
         register_delay_seconds: 0,
@@ -791,29 +866,12 @@ export default function RegisterTaskPage() {
         </Card>
 
         {platform === 'chatgpt' && (
-          <Card title="ChatGPT 手机验证" style={{ marginBottom: 16 }}>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              仅在 OAuth 流程进入 `add_phone` 时使用，用于自动取号并轮询短信验证码。
-            </Text>
-            <Form.Item name="smstome_cookie" label="SMSToMe Cookie">
-              <Input.Password placeholder="cf_clearance=...; PHPSESSID=..." />
-            </Form.Item>
-            <Form.Item name="smstome_country_slugs" label="国家列表">
-              <Input placeholder="united-kingdom,poland,finland" />
-            </Form.Item>
-            <Form.Item name="smstome_phone_attempts" label="手机号尝试次数">
-              <Input placeholder="3" />
-            </Form.Item>
-            <Form.Item name="smstome_otp_timeout_seconds" label="短信等待秒数">
-              <Input placeholder="45" />
-            </Form.Item>
-            <Form.Item name="smstome_poll_interval_seconds" label="轮询间隔秒数">
-              <Input placeholder="5" />
-            </Form.Item>
-            <Form.Item name="smstome_sync_max_pages_per_country" label="每国同步页数">
-              <Input placeholder="5" />
-            </Form.Item>
-          </Card>
+          <div style={{ marginBottom: 16 }}>
+            <PhoneVerificationPanel
+              title="ChatGPT 手机验证"
+              description="仅在 OAuth 流程进入 `add_phone` 时使用，用于自动取号并轮询短信验证码。"
+            />
+          </div>
         )}
 
         {captchaSolver === 'yescaptcha' && (

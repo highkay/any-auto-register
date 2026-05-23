@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons'
 import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import MailImportPanel from '@/components/settings/MailImportPanel'
+import PhoneVerificationPanel from '@/components/settings/PhoneVerificationPanel'
 import { apiFetch } from '@/lib/utils'
 
 function resolveEffectiveMailProvider(mailProvider: string, mailImportSource: string) {
@@ -324,6 +325,12 @@ const TAB_ITEMS = [
     ],
   },
   {
+    key: 'phone',
+    label: '手机验证',
+    icon: <ApiOutlined />,
+    sections: [],
+  },
+  {
     key: 'chatgpt',
     label: 'ChatGPT',
     icon: <ApiOutlined />,
@@ -375,18 +382,7 @@ const TAB_ITEMS = [
           { key: 'codex_proxy_upload_type', label: '上传类型' },
         ],
       },
-      {
-        title: 'SMSToMe 手机验证',
-        desc: 'ChatGPT add_phone 阶段自动取号并轮询短信验证码',
-        fields: [
-          { key: 'smstome_cookie', label: 'SMSToMe Cookie', secret: true },
-          { key: 'smstome_country_slugs', label: '国家列表', placeholder: 'united-kingdom,poland' },
-          { key: 'smstome_phone_attempts', label: '手机号尝试次数', placeholder: '3' },
-          { key: 'smstome_otp_timeout_seconds', label: '短信等待秒数', placeholder: '45' },
-          { key: 'smstome_poll_interval_seconds', label: '轮询间隔秒数', placeholder: '5' },
-          { key: 'smstome_sync_max_pages_per_country', label: '每国同步页数', placeholder: '5' },
-        ],
-      },
+
       {
         title: '邮箱黑名单',
         desc: '仅对 ChatGPT 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。',
@@ -1999,6 +1995,7 @@ export default function Settings() {
   const currentMailProvider = resolveEffectiveMailProvider(currentMailProviderRaw, currentMailImportSource)
   const showFloatingSaveButton =
     activeTab === 'mailbox' ||
+    activeTab === 'phone' ||
     activeTab === 'chatgpt' ||
     activeTab === 'deepseek' ||
     activeTab === 'nvidia' ||
@@ -2108,6 +2105,21 @@ export default function Settings() {
       if (!data.cerebras_mailbox_attempts) {
         data.cerebras_mailbox_attempts = '3'
       }
+      if (!data.phone_verification_provider) {
+        data.phone_verification_provider = 'auto'
+      }
+      if (!data.smstome_global_file) {
+        data.smstome_global_file = 'smstome_all_numbers.txt'
+      }
+      if (!data.smstome_used_numbers_dir) {
+        data.smstome_used_numbers_dir = 'smstome_used'
+      }
+      if (!data.smstome_task_name) {
+        data.smstome_task_name = 'chatgpt_add_phone'
+      }
+      if (!data.five_sim_product) {
+        data.five_sim_product = 'other'
+      }
       data.gpt_load_enabled = resolveFeatureEnabledConfig(
         data.gpt_load_enabled,
         Boolean(
@@ -2134,6 +2146,7 @@ export default function Settings() {
       data.cfworker_enabled_domains = parseStoredDomainList(data.cfworker_enabled_domains)
       data.cfworker_random_subdomain = parseBooleanConfigValue(data.cfworker_random_subdomain)
       data.cfworker_random_name_subdomain = parseBooleanConfigValue(data.cfworker_random_name_subdomain)
+      data.free_sms_tool_include_cooling = parseBooleanConfigValue(data.free_sms_tool_include_cooling)
       data.contribution_enabled = parseBooleanConfigValue(data.contribution_enabled)
       data.email_domain_rule_enabled = parseBooleanConfigValue(data.email_domain_rule_enabled)
       if (!String(data.email_domain_level_count ?? '').trim()) {
@@ -2203,6 +2216,7 @@ export default function Settings() {
       values.gpt_load_enabled = parseBooleanConfigValue(values.gpt_load_enabled)
       values.deepseek_ds2api_enabled = parseBooleanConfigValue(values.deepseek_ds2api_enabled)
       values.qwen_cpa_enabled = parseBooleanConfigValue(values.qwen_cpa_enabled)
+      values.free_sms_tool_include_cooling = parseBooleanConfigValue(values.free_sms_tool_include_cooling)
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
       values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
       values.contribution_enabled = parseBooleanConfigValue(values.contribution_enabled)
@@ -2322,6 +2336,8 @@ export default function Settings() {
             <Form form={form} layout="vertical">
               {activeTab === 'contribution' ? (
                 <ContributionPanel form={form} onSave={save} saving={saving} saved={saved} />
+              ) : activeTab === 'phone' ? (
+                <PhoneVerificationPanel />
               ) : (
                 <>
                   {activeTab === 'captcha' ? <SolverStatus /> : null}

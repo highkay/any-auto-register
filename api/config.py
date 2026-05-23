@@ -87,12 +87,43 @@ CONFIG_KEYS = [
     "outlookemail_password",
     "outlookemail_api_key",
     "outlookemail_group_id",
+    "phone_verification_provider",
+    "smstome_global_file",
+    "smstome_used_numbers_dir",
+    "smstome_task_name",
     "smstome_cookie",
     "smstome_country_slugs",
     "smstome_phone_attempts",
     "smstome_otp_timeout_seconds",
     "smstome_poll_interval_seconds",
     "smstome_sync_max_pages_per_country",
+    "five_sim_api_key",
+    "five_sim_product",
+    "five_sim_country",
+    "five_sim_operator",
+    "five_sim_max_price",
+    "five_sim_phone_attempts",
+    "five_sim_otp_timeout_seconds",
+    "five_sim_poll_interval_seconds",
+    "hero_sms_api_key",
+    "hero_sms_service",
+    "hero_sms_country",
+    "hero_sms_operator",
+    "hero_sms_max_price",
+    "hero_sms_phone_attempts",
+    "hero_sms_otp_timeout_seconds",
+    "hero_sms_poll_interval_seconds",
+    "free_sms_tool_base_url",
+    "free_sms_tool_api_key",
+    "free_sms_tool_app_slug",
+    "free_sms_tool_app_name",
+    "free_sms_tool_country_name",
+    "free_sms_tool_provider_id",
+    "free_sms_tool_claim_ttl_minutes",
+    "free_sms_tool_include_cooling",
+    "free_sms_tool_phone_attempts",
+    "free_sms_tool_otp_timeout_seconds",
+    "free_sms_tool_poll_interval_seconds",
     "luckmail_base_url",
     "luckmail_api_key",
     "luckmail_email_type",
@@ -214,6 +245,16 @@ def get_config():
         all_cfg["external_apps_update_mode"] = "tag"
     if not all_cfg.get("yescaptcha_api_base"):
         all_cfg["yescaptcha_api_base"] = "https://api.yescaptcha.com"
+    if not all_cfg.get("free_sms_tool_base_url"):
+        all_cfg["free_sms_tool_base_url"] = "http://127.0.0.1:18000"
+    if not all_cfg.get("phone_verification_provider"):
+        all_cfg["phone_verification_provider"] = "auto"
+    if not all_cfg.get("smstome_global_file"):
+        all_cfg["smstome_global_file"] = "smstome_all_numbers.txt"
+    if not all_cfg.get("smstome_used_numbers_dir"):
+        all_cfg["smstome_used_numbers_dir"] = "smstome_used"
+    if not all_cfg.get("smstome_task_name"):
+        all_cfg["smstome_task_name"] = "chatgpt_add_phone"
     if not all_cfg.get("gpt_load_group_name"):
         all_cfg["gpt_load_group_name"] = "nvidia"
     if not all_cfg.get("gpt_load_cerebras_group_name"):
@@ -252,6 +293,9 @@ def update_config(body: ConfigUpdate):
     safe = {k: v for k, v in body.data.items() if k in CONFIG_KEYS}
     if safe.get("mail_provider") == "outlook":
         safe["mail_provider"] = "microsoft"
+    if "phone_verification_provider" in safe:
+        provider = str(safe.get("phone_verification_provider", "")).strip().lower()
+        safe["phone_verification_provider"] = provider or "auto"
     if "email_domain_rule_enabled" in safe:
         enabled = str(safe.get("email_domain_rule_enabled", "")).strip().lower()
         safe["email_domain_rule_enabled"] = (

@@ -2,12 +2,13 @@
 OAuth 客户端模块 - 处理 Codex OAuth 登录流程
 """
 
-import time
-import secrets
-import uuid
 import json
 import random
-from urllib.parse import urlparse, parse_qs
+import secrets
+import time
+import uuid
+from urllib.parse import parse_qs, urlparse
+
 from core.proxy_utils import build_requests_proxy_config
 from core.task_runtime import TaskInterruption
 
@@ -16,7 +17,9 @@ try:
 except ImportError:
     import requests as curl_requests
 
-from .phone_service import SMSToMePhoneService
+from .phone_service import create_phone_service
+from .sentinel_browser import get_sentinel_token_via_browser
+from .sentinel_token import build_sentinel_token
 from .utils import (
     FlowState,
     build_browser_headers,
@@ -28,8 +31,6 @@ from .utils import (
     random_delay,
     seed_oai_device_cookie,
 )
-from .sentinel_token import build_sentinel_token
-from .sentinel_browser import get_sentinel_token_via_browser
 
 
 class OAuthClient:
@@ -211,7 +212,9 @@ class OAuthClient:
             pass
 
         self._log(
-            f"OAuth 指纹: ua={user_agent.split('Chrome/')[-1][:24]}..., sec-ch-ua={sec_ch_ua}, impersonate={impersonate}"
+            "OAuth 指纹: "
+            f"ua={user_agent.split('Chrome/')[-1][:24]}..., "
+            f"sec-ch-ua={sec_ch_ua}, impersonate={impersonate}"
         )
         return user_agent, sec_ch_ua, impersonate
 
@@ -2820,15 +2823,34 @@ class OAuthClient:
             )
             return None
 
-        phone_service = SMSToMePhoneService(self.config, log_fn=self._log)
+        phone_service = create_phone_service(self.config, log_fn=self._log)
+        provider_label = getattr(phone_service, "provider_label", "手机号服务")
         if not phone_service.enabled:
             self._set_error(
-                "当前链路需要手机号验证，但未配置可用的手机号能力（SMSToMe 或固定手机号验证码）"
+                "当前链路需要手机号验证，但未配置可用的手机号能力（SMSToMe / HeroSMS / 固定手机号验证码）"
             )
             return None
 
         excluded_prefixes = set()
         last_failure = ""
+
+        def _cancel_entry(current_entry) -> None:
+            try:
+                phone_service.cancel_activation(current_entry)
+            except Exception as release_error:
+                self._log(f"{provider_label} 取消激活失败: {release_error}")
+
+        def _finish_entry(current_entry) -> None:
+            try:
+                phone_service.finish_activation(current_entry)
+            except Exception as release_error:
+                self._log(f"{provider_label} 完成激活失败: {release_error}")
+
+        def _report_code_requested(current_entry) -> None:
+            try:
+                phone_service.report_code_requested(current_entry)
+            except Exception as report_error:
+                self._log(f"{provider_label} 标记发码就绪失败: {report_error}")
 
         for attempt in range(phone_service.max_attempts):
             try:
@@ -2839,12 +2861,19 @@ class OAuthClient:
                 break
 
             if not entry:
-                last_failure = last_failure or "SMSToMe 号码池中无可用手机号"
+                last_failure = last_failure or f"{provider_label} 中无可用手机号"
                 break
 
             prefix = phone_service.prefix_hint(entry.phone)
+            country_label = (
+                getattr(entry, "country_slug", None)
+                or getattr(entry, "country_name", None)
+                or "-"
+            )
             self._log(
-                f"步骤5: add_phone 选择手机号 {attempt + 1}/{phone_service.max_attempts}: {entry.phone} ({entry.country_slug})"
+                "步骤5: add_phone 选择手机号 "
+                f"{attempt + 1}/{phone_service.max_attempts}: "
+                f"{entry.phone} ({country_label})"
             )
 
             sent, next_state, detail = self._send_phone_number(
@@ -2858,6 +2887,7 @@ class OAuthClient:
                 last_failure = detail or "add-phone/send 未返回有效状态"
                 self._log(last_failure)
                 self._blacklist_phone_if_needed(phone_service, entry, last_failure)
+                _cancel_entry(entry)
                 excluded_prefixes.add(prefix)
                 continue
 
@@ -2871,6 +2901,7 @@ class OAuthClient:
                 self._blacklist_phone_if_needed(
                     phone_service, entry, last_failure, next_state
                 )
+                _cancel_entry(entry)
                 excluded_prefixes.add(prefix)
                 continue
 
@@ -2890,11 +2921,16 @@ class OAuthClient:
             )
 
             if verification_channel != "sms":
-                last_failure = f"add_phone 已切到 {verification_channel} 通道，当前 SMSToMe 仅支持短信接码"
+                last_failure = (
+                    f"add_phone 已切到 {verification_channel} 通道，"
+                    f"当前 {provider_label} 仅支持短信接码"
+                )
                 self._log(last_failure)
+                _cancel_entry(entry)
                 excluded_prefixes.add(prefix)
                 continue
 
+            _report_code_requested(entry)
             code = phone_service.wait_for_code(entry)
             if not code:
                 self._log("手机号验证码暂未收到，尝试重发一次...")
@@ -2907,12 +2943,14 @@ class OAuthClient:
                     next_state,
                 )
                 if resend_ok:
+                    _report_code_requested(entry)
                     code = phone_service.wait_for_code(entry)
                 if not code:
                     last_failure = (
                         resend_detail or f"手机号 {entry.phone} 未收到短信验证码"
                     )
                     self._log(last_failure)
+                    _cancel_entry(entry)
                     excluded_prefixes.add(prefix)
                     continue
 
@@ -2927,9 +2965,11 @@ class OAuthClient:
             if not valid or not validated_state:
                 last_failure = detail or "手机号 OTP 验证失败"
                 self._log(last_failure)
+                _cancel_entry(entry)
                 excluded_prefixes.add(prefix)
                 continue
 
+            _finish_entry(entry)
             return validated_state
 
         self._set_error(f"add_phone 阶段失败: {last_failure or '未完成手机号验证'}")
@@ -3304,4 +3344,3 @@ class OAuthClient:
                 f"OAuth 阶段 OTP 验证失败，已尝试 {len(tried_codes)} 个验证码，等待窗口 {otp_wait_seconds}s"
             )
         return None
-
