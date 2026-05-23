@@ -81,7 +81,16 @@ htmlcov/
 kiro_error.*
 .playwright-mcp/
 tmp/
+.tmp/
 tmp_*
+/grok-*.png
+/kimi*.png
+/kimi*.json
+/kimi*.txt
+/kimi.md
+/playwright-*.json
+/probe-*.png
+/zai-*.png
 nvidia-*.png
 slide-*.png
 屏幕截图 *.png
