@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { App, Card, Form, Input, Select, Button, message, Tabs, Space, Tag, Typography, Modal, QRCode, Switch, Alert } from 'antd'
+import { App, Card, Form, Input, InputNumber, Select, Button, message, Tabs, Space, Tag, Typography, Modal, QRCode, Switch, Alert } from 'antd'
 import type { FormInstance } from 'antd'
 import {
   SaveOutlined,
@@ -16,7 +16,7 @@ import {
 } from '@ant-design/icons'
 import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import MailImportPanel from '@/components/settings/MailImportPanel'
-import PhoneVerificationPanel from '@/components/settings/PhoneVerificationPanel'
+import PhoneVerificationPanel, { PHONE_VERIFICATION_PROVIDER_OPTIONS } from '@/components/settings/PhoneVerificationPanel'
 import { apiFetch } from '@/lib/utils'
 
 function resolveEffectiveMailProvider(mailProvider: string, mailImportSource: string) {
@@ -24,7 +24,7 @@ function resolveEffectiveMailProvider(mailProvider: string, mailImportSource: st
   return mailImportSource === 'applemail' ? 'applemail' : 'microsoft'
 }
 
-const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
+const SELECT_FIELDS: Record<string, { label: string; value: string; disabled?: boolean }[]> = {
   mail_provider: [
     { label: 'LuckMail（订单接码 / 已购邮箱）', value: 'luckmail' },
     { label: '邮箱导入', value: 'mail_import' },
@@ -64,6 +64,10 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: 'YesCaptcha', value: 'yescaptcha' },
     { label: '本地 Solver (Camoufox)', value: 'local_solver' },
     { label: '手动', value: 'manual' },
+    { label: 'CapSolver（需实验开关）', value: 'capsolver' },
+    { label: 'EZCaptcha', value: 'ezcaptcha' },
+    { label: '自动串联 (auto)', value: 'auto' },
+    { label: 'Vision（需实验开关）', value: 'vision' },
   ],
   outlook_backend: [
     { label: 'Graph（默认）', value: 'graph' },
@@ -75,6 +79,7 @@ const SELECT_FIELDS: Record<string, { label: string; value: string }[]> = {
     { label: '微软邮箱 - IMAP', value: 'ms_imap' },
     { label: '自建邮箱', value: 'self_built' },
   ],
+  phone_verification_provider: PHONE_VERIFICATION_PROVIDER_OPTIONS,
   cpa_cleanup_enabled: [
     { label: '关闭', value: '0' },
     { label: '开启', value: '1' },
@@ -315,11 +320,64 @@ const TAB_ITEMS = [
     sections: [
       {
         title: '验证码服务',
-        desc: '用于绕过注册页面的人机验证',
+        desc: '用于绕过注册页面的人机验证。密钥与现网一致：API 明文回显，前端密码框遮罩。',
         fields: [
           { key: 'default_captcha_solver', label: '默认服务', type: 'select' },
           { key: 'yescaptcha_key', label: 'YesCaptcha Key', secret: true },
           { key: 'yescaptcha_api_base', label: 'YesCaptcha API Base', placeholder: 'https://api.yescaptcha.com / http://192.168.1.18:38000' },
+          { key: 'capsolver_key', label: 'CapSolver Key', secret: true },
+          { key: 'ezcaptcha_key', label: 'EZCaptcha Key', secret: true },
+          { key: 'ezcaptcha_api_base', label: 'EZCaptcha API Base', placeholder: 'https://api.ez-captcha.com' },
+          { key: 'captcha_max_provider_attempts', label: 'auto 最大尝试 provider 数', placeholder: '3' },
+        ],
+      },
+      {
+        title: 'Vision（实验）',
+        desc: '多模型视觉验证码；需开启 feature_vision_captcha。',
+        fields: [
+          { key: 'vision_api_base', label: 'Vision API Base', placeholder: 'OpenAI 兼容 base URL' },
+          { key: 'vision_api_key', label: 'Vision API Key', secret: true },
+          { key: 'vision_model', label: '默认模型', placeholder: 'gpt-4o' },
+          { key: 'vision_shot_dir', label: '截图目录', placeholder: 'logs/vision（空=不落盘）' },
+          { key: 'vision_shot_retention_days', label: '截图保留天数', placeholder: '3' },
+          { key: 'vision_max_rounds', label: '最大投票轮数', placeholder: '3' },
+          { key: 'vision_review_enabled', label: '保留 REVIEW 截图', type: 'boolean' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'experimental',
+    label: '实验功能',
+    icon: <SafetyOutlined />,
+    sections: [
+      {
+        title: 'Feature Flags',
+        desc: '默认全部关闭（fail-closed）。打开后才允许对应平台 / 验证码能力出现在列表或被任务创建。',
+        fields: [
+          { key: 'feature_github_register', label: 'GitHub 注册', type: 'boolean' },
+          { key: 'feature_outlook_producer', label: 'Outlook 邮箱生产者', type: 'boolean' },
+          { key: 'feature_claude_register', label: 'Claude 注册（预留）', type: 'boolean' },
+          { key: 'feature_vision_captcha', label: 'Vision 验证码', type: 'boolean' },
+          { key: 'feature_capsolver', label: 'CapSolver 后端', type: 'boolean' },
+        ],
+      },
+      {
+        title: 'Outlook 邮箱生产者',
+        desc: '自注册 Outlook 并写入本地 outlook_accounts。需开启 feature_outlook_producer。API: POST /api/mail-producers/outlook',
+        fields: [
+          { key: 'outlook_px_mode', label: 'PerimeterX 模式', placeholder: 'auto / token / human' },
+          { key: 'outlook_px_app_id', label: 'PerimeterX App Id', placeholder: 'PXzC5j78di' },
+          { key: 'outlook_extract_graph_token', label: '尝试提取 Graph token', type: 'boolean' },
+          { key: 'outlook_require_graph_token', label: '无 Graph token 则禁用入库', type: 'boolean' },
+        ],
+      },
+      {
+        title: 'GitHub',
+        desc: '需开启 feature_github_register。',
+        fields: [
+          { key: 'github_skip_captcha_variants', label: '首轮跳过变体', placeholder: 'character' },
+          { key: 'github_puzzle_max_rounds', label: '拼图最大轮数', placeholder: '8' },
         ],
       },
     ],
@@ -382,7 +440,6 @@ const TAB_ITEMS = [
           { key: 'codex_proxy_upload_type', label: '上传类型' },
         ],
       },
-
       {
         title: '邮箱黑名单',
         desc: '仅对 ChatGPT 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。',
@@ -418,13 +475,44 @@ const TAB_ITEMS = [
         fields: [
           { key: 'grok2api_url', label: 'API URL', placeholder: 'http://127.0.0.1:7860' },
           { key: 'grok2api_app_key', label: 'App Key', secret: true },
-          { key: 'grok2api_pool', label: 'Token Pool', placeholder: 'ssoBasic 或 ssoSuper' },
+          { key: 'grok2api_pool', label: 'Token Pool', placeholder: 'basic / super / heavy，兼容 ssoBasic / ssoSuper' },
           { key: 'grok2api_quota', label: 'Quota（可选）', placeholder: '留空按池默认值' },
         ],
       },
       {
+        title: 'Grok 注册（清障 + 有头）',
+        desc: '默认：FlareSolverr 清障 + 有头浏览器同页注册。Turnstile 自动失败时会暂停，等你在弹出窗口里手动点过验证码后再继续。无需 YesCaptcha。',
+        fields: [
+          { key: 'grok_register_mode', label: '强制模式（可选）', placeholder: '留空按执行器；protocol / browser' },
+          { key: 'grok_browser_mode', label: '浏览器模式', placeholder: 'headed / headless' },
+          { key: 'grok_browser_fallback', label: '协议失败回退浏览器', type: 'boolean' },
+          { key: 'grok_clearance_mode', label: '清障模式', placeholder: 'auto / always / never' },
+          { key: 'grok_flaresolverr_url', label: 'FlareSolverr URL', placeholder: 'http://127.0.0.1:8191/v1' },
+          { key: 'grok_flaresolverr_attempts', label: '清障重试次数', placeholder: '3' },
+          { key: 'grok_manual_turnstile', label: 'Turnstile 人工接管', type: 'boolean' },
+          { key: 'grok_manual_turnstile_timeout', label: '人工等待秒数', placeholder: '300' },
+          { key: 'grok_turnstile_timeout', label: '自动 Turnstile 超时秒', placeholder: '90' },
+          { key: 'grok_cf_impersonate', label: 'TLS 指纹', placeholder: 'chrome131' },
+          { key: 'grok_cf_impersonate_fallback', label: 'TLS 回退列表', placeholder: 'chrome124,chrome120' },
+          { key: 'grok_mailbox_attempts', label: '邮箱轮换次数', placeholder: '8' },
+        ],
+      },
+      {
+        title: 'xAI OAuth CPA',
+        desc: '注册成功后优先纯 HTTP SSO 授权 Device OAuth，失败再开浏览器。开启无头模式时无法处理 MFA。',
+        fields: [
+          { key: 'grok_cpa_enabled', label: '注册后自动上传', type: 'boolean' },
+          { key: 'grok_cpa_management_url', label: 'CPA 管理地址', placeholder: 'http://192.168.1.18:18317' },
+          { key: 'grok_cpa_management_token', label: 'CPA 管理 Token', secret: true },
+          { key: 'grok_cpa_auth_dir', label: '认证文件归档目录（可选）', placeholder: '留空则只上传、不落盘' },
+          { key: 'grok_cpa_proxy', label: 'xAI OAuth 代理（可选）', placeholder: 'http://user:pass@host:port' },
+          { key: 'grok_cpa_headless', label: '无头浏览器', type: 'boolean' },
+          { key: 'grok_cpa_timeout_seconds', label: '授权超时秒数', placeholder: '300' },
+        ],
+      },
+      {
         title: '邮箱黑名单',
-        desc: '仅对 Grok 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。本次任务遇到“邮箱域名被拒绝”时也会临时加入黑名单。',
+        desc: '仅对 Grok 自动分配邮箱生效；多个后缀用英文逗号或换行分隔。本次任务遇到“邮箱域名被拒绝”时也会自动追加到黑名单配置。',
         fields: [
           { key: 'grok_blocked_email_domains', label: '禁用邮箱后缀', placeholder: 'blocked.example.com, disposable.mail' },
         ],
@@ -438,7 +526,7 @@ const TAB_ITEMS = [
     sections: [
       {
         title: '浏览器注册',
-        desc: 'DeepSeek 当前使用日文页面浏览器注册；协议层继续用于发码、校码、重置密码和登录校验。PoW Worker URL 仍可覆盖以适配站点升级。',
+        desc: 'DeepSeek 当前使用日文页面浏览器注册；协议层继续用于发码、校码、重置密码和登录校验。hCaptcha 求解复用全局 YesCaptcha API Base / Key，可直接指向本地 OhMyCaptcha 实例。PoW Worker URL 仍可覆盖以适配站点升级。',
         fields: [
           { key: 'deepseek_ui_locale', label: 'UI Locale', placeholder: 'ja-JP' },
           { key: 'deepseek_region', label: 'Region', placeholder: 'US' },
@@ -464,6 +552,29 @@ const TAB_ITEMS = [
         desc: '仅对 DeepSeek 自动分配邮箱生效；默认已带上当前已知会被 DeepSeek 拒绝的后缀，可继续追加。',
         fields: [
           { key: 'deepseek_blocked_email_domains', label: '禁用邮箱后缀', placeholder: 'apple.edu.pl, imail.edu.vn' },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'zai',
+    label: 'Z.ai',
+    icon: <ApiOutlined />,
+    sections: [
+      {
+        title: '浏览器注册',
+        desc: 'Z.ai 使用邮箱注册链接 + 阿里云滑块验证。验证码识别复用全局 YesCaptcha API Base / Key，可直接指向本地 ohmycaptcha 实例。',
+        fields: [
+          { key: 'zai_mailbox_attempts', label: '邮箱重试次数', placeholder: '3' },
+        ],
+      },
+      {
+        title: 'zai2api',
+        desc: '注册成功后自动把 Z.ai bearer token 导入到 zai2api 的 /v1/tokens token 池。',
+        fields: [
+          { key: 'zai_zai2api_enabled', label: '启用自动导入', type: 'boolean' },
+          { key: 'zai_zai2api_url', label: 'zai2api 地址', placeholder: 'http://192.168.1.18:18082' },
+          { key: 'zai_zai2api_auth_token', label: 'AUTH_TOKEN', secret: true },
         ],
       },
     ],
@@ -554,6 +665,31 @@ const TAB_ITEMS = [
           { key: 'qwen_cpa_enabled', label: '启用自动上传', type: 'boolean' },
           { key: 'qwen_cpa_api_url', label: 'API URL', placeholder: 'https://your-cpa.example.com（留空则使用 ChatGPT CPA 地址）' },
           { key: 'qwen_cpa_api_key', label: 'API Key', secret: true, placeholder: '留空则使用 ChatGPT CPA Key' },
+        ],
+      },
+      {
+        title: '注册策略',
+        desc: '对齐 qwen2api：默认 discard=遇阿里云验证码丢弃重试，不调用任何验证码求解器。solve 为遗留同会话打码路径。',
+        fields: [
+          {
+            key: 'qwen_captcha_mode',
+            label: '验证码策略',
+            type: 'select',
+            options: [
+              { label: 'discard（qwen2api，推荐）', value: 'discard' },
+              { label: 'manual（headed 手动过验证码）', value: 'manual' },
+              { label: 'solve（遗留求解器路径）', value: 'solve' },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'OpenGate / Qwen Gate',
+        desc: '注册完成后自动上传邮箱+密码到 OpenGate 实例（dashboard 账号池）。当前实例账号上传接口可不填 API Key；若实例开启了鉴权再填。',
+        fields: [
+          { key: 'opengate_enabled', label: '启用自动上传', type: 'boolean' },
+          { key: 'opengate_api_url', label: 'OpenGate URL', placeholder: 'http://192.168.1.18:7860' },
+          { key: 'opengate_api_key', label: 'API Key（可选）', secret: true, placeholder: '留空也可上传；受保护接口再填 sk-...' },
         ],
       },
       {
@@ -992,6 +1128,155 @@ function CFWorkerDomainPoolSection({ form }: { form: FormInstance<SettingsFormVa
       <Typography.Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
         仅已启用域名会参与注册；点击已启用标签可直接移除。
       </Typography.Text>
+    </Card>
+  )
+}
+
+function OutlookProducerPanel({ form }: { form: FormInstance }) {
+  const [count, setCount] = useState(1)
+  const [concurrency, setConcurrency] = useState(1)
+  const [executorType, setExecutorType] = useState<'headed' | 'headless'>('headed')
+  const [starting, setStarting] = useState(false)
+  const [lastTaskId, setLastTaskId] = useState<string | null>(null)
+  const [lastError, setLastError] = useState<string | null>(null)
+
+  const flagOn = parseBooleanConfigValue(form.getFieldValue('feature_outlook_producer'))
+
+  const startProducer = async () => {
+    setStarting(true)
+    setLastError(null)
+    try {
+      // Persist current form values first so flags/keys take effect
+      const values = form.getFieldsValue(true)
+      await apiFetch('/config', {
+        method: 'PUT',
+        body: JSON.stringify({ data: values }),
+      })
+      const res = await apiFetch('/mail-producers/outlook', {
+        method: 'POST',
+        body: JSON.stringify({
+          count,
+          concurrency,
+          executor_type: executorType,
+          captcha_solver: values.default_captcha_solver || 'yescaptcha',
+          extra: {},
+        }),
+      }) as { task_id?: string; detail?: string }
+      if (!res?.task_id) {
+        throw new Error(String(res?.detail || '未返回 task_id'))
+      }
+      setLastTaskId(res.task_id)
+      message.success(`已启动 Outlook 产号任务 ${res.task_id}`)
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : '启动失败'
+      setLastError(detail)
+      message.error(detail)
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  return (
+    <Card title="一键 Outlook 产号" size="small" style={{ marginBottom: 16 }}>
+      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <Alert
+          type={flagOn ? 'info' : 'warning'}
+          showIcon
+          message={
+            flagOn
+              ? '将调用 POST /api/mail-producers/outlook，成功账号写入本地 outlook_accounts，可供 mail_provider=microsoft/outlook 消费。'
+              : '请先打开上方 Feature Flags 中的「Outlook 邮箱生产者」并保存配置。'
+          }
+        />
+        <Space wrap>
+          <span>数量</span>
+          <InputNumber min={1} max={50} value={count} onChange={(v) => setCount(Number(v) || 1)} />
+          <span>并发</span>
+          <InputNumber min={1} max={5} value={concurrency} onChange={(v) => setConcurrency(Number(v) || 1)} />
+          <span>浏览器</span>
+          <Select
+            style={{ width: 140 }}
+            value={executorType}
+            onChange={setExecutorType}
+            options={[
+              { label: '有头 (推荐)', value: 'headed' },
+              { label: '无头', value: 'headless' },
+            ]}
+          />
+          <Button type="primary" loading={starting} disabled={!flagOn} onClick={() => { void startProducer() }}>
+            启动产号
+          </Button>
+        </Space>
+        {lastTaskId ? (
+          <Typography.Text type="secondary">
+            最近任务：<Typography.Text code>{lastTaskId}</Typography.Text>
+            {' · '}可在「运行中任务」查看日志与停止
+          </Typography.Text>
+        ) : null}
+        {lastError ? <Alert type="error" showIcon message={lastError} /> : null}
+      </Space>
+    </Card>
+  )
+}
+
+function MultiRegisterPanel({ form }: { form: FormInstance }) {
+  const [platformsText, setPlatformsText] = useState('github,grok')
+  const [starting, setStarting] = useState(false)
+  const [lastTaskId, setLastTaskId] = useState<string | null>(null)
+
+  const startMulti = async () => {
+    setStarting(true)
+    try {
+      const values = form.getFieldsValue(true)
+      await apiFetch('/config', {
+        method: 'PUT',
+        body: JSON.stringify({ data: values }),
+      })
+      const platforms = platformsText
+        .split(/[,，\s]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean)
+      const res = await apiFetch('/multi-tasks/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          platforms,
+          executor_type: values.default_executor || 'headed',
+          captcha_solver: values.default_captcha_solver || 'yescaptcha',
+          extra: {},
+        }),
+      }) as { task_id?: string; warning?: string }
+      if (!res?.task_id) throw new Error('未返回 task_id')
+      setLastTaskId(res.task_id)
+      message.success(res.warning || `已启动多平台任务 ${res.task_id}`)
+    } catch (error: unknown) {
+      message.error(error instanceof Error ? error.message : '启动失败')
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  return (
+    <Card title="实验：同邮箱串行多平台" size="small" style={{ marginBottom: 16 }}>
+      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <Alert
+          type="warning"
+          showIcon
+          message="成功率不设 SLA。各平台需已开 flag（如 GitHub）。失败会跳过并继续下一平台。"
+        />
+        <Input
+          value={platformsText}
+          onChange={(e) => setPlatformsText(e.target.value)}
+          placeholder="平台列表，逗号分隔，例如 github,grok,chatgpt"
+        />
+        <Button loading={starting} onClick={() => { void startMulti() }}>
+          启动串行注册
+        </Button>
+        {lastTaskId ? (
+          <Typography.Text type="secondary">
+            最近任务：<Typography.Text code>{lastTaskId}</Typography.Text>
+          </Typography.Text>
+        ) : null}
+      </Space>
     </Card>
   )
 }
@@ -1998,6 +2283,7 @@ export default function Settings() {
     activeTab === 'phone' ||
     activeTab === 'chatgpt' ||
     activeTab === 'deepseek' ||
+    activeTab === 'zai' ||
     activeTab === 'nvidia' ||
     activeTab === 'cerebras'
   const contentPaneRef = useRef<HTMLDivElement | null>(null)
@@ -2138,15 +2424,55 @@ export default function Settings() {
             String(data.deepseek_ds2api_admin_key ?? '').trim(),
         ),
       )
+      data.zai_zai2api_enabled = resolveFeatureEnabledConfig(
+        data.zai_zai2api_enabled,
+        Boolean(
+          String(data.zai_zai2api_url ?? '').trim() &&
+            String(data.zai_zai2api_auth_token ?? '').trim(),
+        ),
+      )
       data.qwen_cpa_enabled = resolveFeatureEnabledConfig(
         data.qwen_cpa_enabled,
         false, // 默认关闭，不依赖 cpa_api_url
       )
+      data.opengate_enabled = resolveFeatureEnabledConfig(
+        data.opengate_enabled,
+        // 账号上传接口在多数 OpenGate 实例上可不鉴权；有 URL 即可默认开启
+        Boolean(String(data.opengate_api_url ?? '').trim()),
+      )
+      if (!String(data.opengate_api_url ?? '').trim()) {
+        data.opengate_api_url = 'http://192.168.1.18:7860'
+      }
+      data.grok_cpa_enabled = resolveFeatureEnabledConfig(data.grok_cpa_enabled, false)
+      data.grok_cpa_headless = parseBooleanConfigValue(data.grok_cpa_headless)
+      // Protocol path defaults: browser fallback on, clearance auto
+      data.grok_browser_fallback =
+        data.grok_browser_fallback === undefined || data.grok_browser_fallback === ''
+          ? true
+          : parseBooleanConfigValue(data.grok_browser_fallback)
+      data.grok_manual_turnstile =
+        data.grok_manual_turnstile === undefined || data.grok_manual_turnstile === ''
+          ? true
+          : parseBooleanConfigValue(data.grok_manual_turnstile)
+      if (!String(data.grok_clearance_mode ?? '').trim()) {
+        data.grok_clearance_mode = 'auto'
+      }
+      if (!String(data.grok_browser_mode ?? '').trim()) {
+        data.grok_browser_mode = 'headed'
+      }
+      if (!String(data.grok_manual_turnstile_timeout ?? '').trim()) {
+        data.grok_manual_turnstile_timeout = '300'
+      }
+      if (!String(data.grok_cf_impersonate ?? '').trim()) {
+        data.grok_cf_impersonate = 'chrome131'
+      }
+      if (!String(data.grok_cpa_timeout_seconds ?? '').trim()) {
+        data.grok_cpa_timeout_seconds = '300'
+      }
       data.cfworker_domains = parseStoredDomainList(data.cfworker_domains)
       data.cfworker_enabled_domains = parseStoredDomainList(data.cfworker_enabled_domains)
       data.cfworker_random_subdomain = parseBooleanConfigValue(data.cfworker_random_subdomain)
       data.cfworker_random_name_subdomain = parseBooleanConfigValue(data.cfworker_random_name_subdomain)
-      data.free_sms_tool_include_cooling = parseBooleanConfigValue(data.free_sms_tool_include_cooling)
       data.contribution_enabled = parseBooleanConfigValue(data.contribution_enabled)
       data.email_domain_rule_enabled = parseBooleanConfigValue(data.email_domain_rule_enabled)
       if (!String(data.email_domain_level_count ?? '').trim()) {
@@ -2215,8 +2541,13 @@ export default function Settings() {
       values.sub2api_enabled = parseBooleanConfigValue(values.sub2api_enabled)
       values.gpt_load_enabled = parseBooleanConfigValue(values.gpt_load_enabled)
       values.deepseek_ds2api_enabled = parseBooleanConfigValue(values.deepseek_ds2api_enabled)
+      values.zai_zai2api_enabled = parseBooleanConfigValue(values.zai_zai2api_enabled)
       values.qwen_cpa_enabled = parseBooleanConfigValue(values.qwen_cpa_enabled)
-      values.free_sms_tool_include_cooling = parseBooleanConfigValue(values.free_sms_tool_include_cooling)
+      values.opengate_enabled = parseBooleanConfigValue(values.opengate_enabled)
+      values.grok_cpa_enabled = parseBooleanConfigValue(values.grok_cpa_enabled)
+      values.grok_cpa_headless = parseBooleanConfigValue(values.grok_cpa_headless)
+      values.grok_browser_fallback = parseBooleanConfigValue(values.grok_browser_fallback)
+      values.grok_manual_turnstile = parseBooleanConfigValue(values.grok_manual_turnstile)
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
       values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
       values.contribution_enabled = parseBooleanConfigValue(values.contribution_enabled)
@@ -2241,7 +2572,11 @@ export default function Settings() {
         cpa_enabled: values.cpa_enabled,
         sub2api_enabled: values.sub2api_enabled,
         gpt_load_enabled: values.gpt_load_enabled,
+        zai_zai2api_enabled: values.zai_zai2api_enabled,
         qwen_cpa_enabled: values.qwen_cpa_enabled,
+        opengate_enabled: values.opengate_enabled,
+        grok_cpa_enabled: values.grok_cpa_enabled,
+        grok_cpa_headless: values.grok_cpa_headless,
         cfworker_domains: domains,
         cfworker_enabled_domains: enabledDomains,
         cfworker_domain: domains.length > 0 ? '' : values.cfworker_domain,
@@ -2341,6 +2676,12 @@ export default function Settings() {
               ) : (
                 <>
                   {activeTab === 'captcha' ? <SolverStatus /> : null}
+                  {activeTab === 'experimental' ? (
+                    <>
+                      <OutlookProducerPanel form={form} />
+                      <MultiRegisterPanel form={form} />
+                    </>
+                  ) : null}
                   {activeTab === 'mailbox' ? (
                     <>
                       {mailboxSections.defaultSection ? (

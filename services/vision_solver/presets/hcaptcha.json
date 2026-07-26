@@ -1,0 +1,19 @@
+{
+  "name": "hcaptcha",
+  "frame_match": ["frame=challenge", "hcaptcha"],
+  "mode": "canvas_grid",
+  "challenge_text_sel": "#prompt-question, .prompt-text",
+  "canvas_sel": "canvas",
+  "submit_sel": ".button-submit",
+  "rows": 3,
+  "cols": 3,
+  "grid_top_frac": 0.30,
+  "grid_bottom_frac": 0.036,
+  "grid_left_frac": 0.164,
+  "grid_right_frac": 0.164,
+  "answer_format": "PICK_LIST",
+  "max_rounds": 8,
+  "deadline": 55,
+  "settle_ms": 1200,
+  "success_gone_frame": true
+}

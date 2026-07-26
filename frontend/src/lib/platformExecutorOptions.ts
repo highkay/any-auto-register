@@ -7,7 +7,7 @@ export const EXECUTOR_OPTIONS = [
 const PLATFORM_EXECUTORS: Record<string, string[]> = {
   chatgpt: ['protocol', 'headless', 'headed'],
   cursor: ['protocol', 'headless', 'headed'],
-  grok: ['protocol', 'headless', 'headed'],
+  grok: ['protocol', 'headed', 'headless'],
   kiro: ['protocol', 'headless', 'headed'],
   deepseek: ['headless', 'headed'],
   nvidia: ['headless', 'headed'],
@@ -16,6 +16,9 @@ const PLATFORM_EXECUTORS: Record<string, string[]> = {
   trae: ['protocol', 'headless', 'headed'],
   qwen: ['headless', 'headed'],
   openblocklabs: ['protocol'],
+  github: ['headed', 'headless'],
+  claude: ['headed', 'headless'],
+  zai: ['headless', 'headed'],
 }
 
 export function getSupportedExecutors(platform?: string) {

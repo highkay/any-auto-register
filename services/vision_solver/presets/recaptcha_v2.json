@@ -1,0 +1,12 @@
+{
+  "name": "recaptcha_v2",
+  "frame_match": ["recaptcha", "google.com/recaptcha"],
+  "mode": "grid_select",
+  "tile_sel": ".rc-imageselect-tile",
+  "submit_sel": "#recaptcha-verify-button",
+  "cols": 3,
+  "rows": 3,
+  "answer_format": "PICK_LIST",
+  "max_rounds": 6,
+  "success_gone_frame": true
+}

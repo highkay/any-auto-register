@@ -1,0 +1,10 @@
+{
+  "name": "arkose_match",
+  "frame_match": ["arkose", "funcaptcha", "octocaptcha"],
+  "mode": "single_pick",
+  "answer_format": "ANSWER_INDEX",
+  "max_rounds": 6,
+  "deadline": 50,
+  "settle_ms": 800,
+  "success_gone_frame": true
+}

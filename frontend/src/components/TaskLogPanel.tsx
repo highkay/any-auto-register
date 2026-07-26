@@ -86,7 +86,13 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
     if (isFinished) return
     setStopLoading(true)
     try {
-      await apiFetch(`/tasks/${taskId}/stop`, { method: 'POST' })
+      const id = String(taskId || '')
+      const stopPath = id.startsWith('mailprod_')
+        ? `/mail-producers/tasks/${taskId}/stop`
+        : id.startsWith('multi_')
+          ? `/multi-tasks/${taskId}/stop`
+          : `/tasks/${taskId}/stop`
+      await apiFetch(stopPath, { method: 'POST' })
       setStopRequested(true)
       message.success('已发送停止任务请求，正在停止进行中的线程')
     } catch (error_: unknown) {
@@ -119,7 +125,13 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
 
     const initSnapshot = async (): Promise<boolean> => {
       try {
-        const snapshot = await apiFetch(`/tasks/${taskId}`) as {
+        const id = String(taskId || '')
+        const snapshotPath = id.startsWith('mailprod_')
+          ? `/mail-producers/tasks/${taskId}`
+          : id.startsWith('multi_')
+            ? `/multi-tasks/${taskId}`
+            : `/tasks/${taskId}`
+        const snapshot = await apiFetch(snapshotPath) as {
           logs?: string[]
           status?: TaskTerminalStatus | string
           success?: number
@@ -155,7 +167,52 @@ export function TaskLogPanel({ taskId, onDone }: TaskLogPanelProps) {
       return false
     }
 
+    const pollAltTaskOnce = async (path: string): Promise<boolean> => {
+      try {
+        const snapshot = await apiFetch(path) as {
+          logs?: string[]
+          status?: TaskTerminalStatus | string
+          success?: number
+          registered?: number
+          total?: number
+          control?: { stop_requested?: boolean }
+        }
+        if (cancelled) return true
+        const snapshotLines = Array.isArray(snapshot.logs) ? snapshot.logs : []
+        setLines(snapshotLines)
+        nextSinceRef.current = snapshotLines.length
+        setSummary((previous) =>
+          mergeSummary(previous, {
+            success: snapshot.success,
+            registered: snapshot.registered,
+            total: snapshot.total,
+          }),
+        )
+        setStopRequested(Boolean(snapshot.control?.stop_requested))
+        if (snapshot.status === 'done' || snapshot.status === 'failed' || snapshot.status === 'stopped') {
+          setTerminalStatus(snapshot.status)
+          onDoneRef.current?.()
+          return true
+        }
+        await sleep(1500)
+        return false
+      } catch (error_: unknown) {
+        if (!cancelled) {
+          const detail = error_ instanceof Error ? error_.message : '轮询任务失败'
+          setError(detail)
+        }
+        return false
+      }
+    }
+
     const connectStreamOnce = async (): Promise<boolean> => {
+      const id = String(taskId || '')
+      if (id.startsWith('mailprod_')) {
+        return pollAltTaskOnce(`/mail-producers/tasks/${taskId}`)
+      }
+      if (id.startsWith('multi_')) {
+        return pollAltTaskOnce(`/multi-tasks/${taskId}`)
+      }
       try {
         const token = getToken()
         const headers: Record<string, string> = {}

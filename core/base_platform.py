@@ -33,7 +33,8 @@ class Account:
 class RegisterConfig:
     """注册任务配置"""
     executor_type: str = "protocol"   # protocol | headless | headed
-    captcha_solver: str = "yescaptcha"  # yescaptcha | 2captcha | manual
+    # yescaptcha | local_solver | manual | capsolver | ezcaptcha | vision | auto
+    captcha_solver: str = "yescaptcha"
     proxy: Optional[str] = None
     extra: dict = field(default_factory=dict)
 
@@ -137,25 +138,111 @@ class BasePlatform(ABC):
         raise ValueError(f"未知执行器类型: {t}")
 
     def _make_captcha(self, **kwargs):
-        """根据 config 创建验证码解决器"""
-        from .base_captcha import YesCaptcha, ManualCaptcha, LocalSolverCaptcha
-        t = self.config.captcha_solver
+        """根据 config 创建验证码解决器（同步）。
+
+        合法 captcha_solver:
+          yescaptcha | local_solver | manual | capsolver | ezcaptcha | vision | auto
+        """
+        from .base_captcha import (
+            CapSolverCaptcha,
+            CompositeCaptcha,
+            EZCaptchaCaptcha,
+            LocalSolverCaptcha,
+            ManualCaptcha,
+            VisionCaptcha,
+            YesCaptcha,
+        )
+        from .flags import FEATURE_CAPSOLVER, FEATURE_VISION_CAPTCHA, flag_enabled
+
+        extra = self.config.extra or {}
+
+        def _cfg_get(*names: str, default: str = "") -> str:
+            for name in names:
+                if name in kwargs and kwargs.get(name) not in (None, ""):
+                    return str(kwargs.get(name)).strip()
+                if extra.get(name) not in (None, ""):
+                    return str(extra.get(name)).strip()
+            try:
+                from core.config_store import config_store
+
+                store = config_store.get_all()
+            except Exception:
+                store = {}
+            for name in names:
+                if store.get(name) not in (None, ""):
+                    return str(store.get(name)).strip()
+                env_val = os.getenv(str(name or "").upper())
+                if env_val not in (None, ""):
+                    return str(env_val).strip()
+            return default
+
+        def _store_all() -> dict:
+            try:
+                from core.config_store import config_store
+
+                return config_store.get_all()
+            except Exception:
+                return {}
+
+        t = str(self.config.captcha_solver or "yescaptcha").strip().lower()
+        store = _store_all()
+
+        if t == "capsolver" and not flag_enabled(FEATURE_CAPSOLVER, store):
+            raise ValueError("feature_capsolver 未启用")
+        if t == "vision" and not flag_enabled(FEATURE_VISION_CAPTCHA, store):
+            raise ValueError("feature_vision_captcha 未启用")
+
         if t == "yescaptcha":
-            key = kwargs.get("key") or self.config.extra.get("yescaptcha_key", "")
-            api_base = (
-                kwargs.get("api_base")
-                or self.config.extra.get("yescaptcha_api_base")
-                or os.getenv("YESCAPTCHA_API_BASE")
-                or None
-            )
+            key = _cfg_get("key", "yescaptcha_key")
+            api_base = _cfg_get("yescaptcha_api_base") or None
             return YesCaptcha(key, api_base=api_base)
-        elif t == "manual":
+        if t == "manual":
             return ManualCaptcha()
-        elif t == "local_solver":
+        if t == "local_solver":
             url = (
-                self.config.extra.get("solver_url")
+                _cfg_get("solver_url")
                 or os.getenv("LOCAL_SOLVER_URL")
                 or f"http://127.0.0.1:{os.getenv('SOLVER_PORT', '8889')}"
             )
             return LocalSolverCaptcha(url)
+        if t == "capsolver":
+            return CapSolverCaptcha(_cfg_get("capsolver_key", "key"))
+        if t == "ezcaptcha":
+            return EZCaptchaCaptcha(
+                _cfg_get("ezcaptcha_key", "key"),
+                api_base=_cfg_get("ezcaptcha_api_base") or None,
+            )
+        if t == "vision":
+            return VisionCaptcha(
+                {
+                    "vision_api_base": _cfg_get("vision_api_base"),
+                    "vision_api_key": _cfg_get("vision_api_key"),
+                    "vision_model": _cfg_get("vision_model"),
+                }
+            )
+        if t == "auto":
+            solvers = []
+            labels = []
+            yes_key = _cfg_get("yescaptcha_key", "key")
+            if yes_key:
+                solvers.append(YesCaptcha(yes_key, api_base=_cfg_get("yescaptcha_api_base") or None))
+                labels.append("yescaptcha")
+            if flag_enabled(FEATURE_CAPSOLVER, store):
+                cap_key = _cfg_get("capsolver_key")
+                if cap_key:
+                    solvers.append(CapSolverCaptcha(cap_key))
+                    labels.append("capsolver")
+            ez_key = _cfg_get("ezcaptcha_key")
+            if ez_key:
+                solvers.append(
+                    EZCaptchaCaptcha(ez_key, api_base=_cfg_get("ezcaptcha_api_base") or None)
+                )
+                labels.append("ezcaptcha")
+            if not solvers:
+                raise ValueError("captcha_solver=auto 但未配置任何可用 key")
+            try:
+                max_attempts = int(str(_cfg_get("captcha_max_provider_attempts", default="3") or "3"))
+            except (TypeError, ValueError):
+                max_attempts = 3
+            return CompositeCaptcha(solvers, max_provider_attempts=max_attempts, labels=labels)
         raise ValueError(f"未知验证码解决器: {t}")

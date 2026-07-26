@@ -52,11 +52,18 @@ const PLATFORM_LABELS: Record<string, string> = {
   cerebras: 'Cerebras',
   tavily: 'Tavily',
   openblocklabs: 'OpenBlock Labs',
+  github: 'GitHub',
+  claude: 'Claude',
+  outlook: 'Outlook 邮箱',
+  multi: '多平台',
+  zai: 'Z.ai',
 }
 
 const SOURCE_LABELS: Record<string, string> = {
   manual: '手动',
   api: 'API',
+  mail_producer: '邮箱生产',
+  multi_platform: '串行多平台',
   schedule: '调度',
 }
 
@@ -108,9 +115,26 @@ export default function RunningTasks() {
     setLoading(true)
     try {
       const data = (await apiFetch('/tasks')) as TaskSnapshot[]
+      let producer: TaskSnapshot[] = []
+      let multi: TaskSnapshot[] = []
+      try {
+        producer = (await apiFetch('/mail-producers/tasks')) as TaskSnapshot[]
+      } catch {
+        producer = []
+      }
+      try {
+        multi = (await apiFetch('/multi-tasks')) as TaskSnapshot[]
+      } catch {
+        multi = []
+      }
+      const merged = [
+        ...(Array.isArray(data) ? data : []),
+        ...(Array.isArray(producer) ? producer : []),
+        ...(Array.isArray(multi) ? multi : []),
+      ]
       // sort: running first, then pending, then finished (newest first)
       const order = { running: 0, pending: 1, done: 2, failed: 3, stopped: 4 }
-      const sorted = [...(data || [])].sort((a, b) => {
+      const sorted = [...merged].sort((a, b) => {
         const oa = order[a.status] ?? 9
         const ob = order[b.status] ?? 9
         if (oa !== ob) return oa - ob

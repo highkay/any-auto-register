@@ -18,6 +18,32 @@ CONFIG_KEYS = [
     "twocaptcha_key",
     "default_executor",
     "default_captcha_solver",
+    # Experimental feature flags (default off)
+    "feature_claude_register",
+    "feature_github_register",
+    "feature_outlook_producer",
+    "feature_vision_captcha",
+    "feature_capsolver",
+    # Extended captcha backends
+    "capsolver_key",
+    "ezcaptcha_key",
+    "ezcaptcha_api_base",
+    "captcha_max_provider_attempts",
+    # Vision
+    "vision_api_base",
+    "vision_api_key",
+    "vision_model",
+    "vision_shot_dir",
+    "vision_shot_retention_days",
+    "vision_max_rounds",
+    "vision_review_enabled",
+    # Outlook producer / GitHub
+    "outlook_px_app_id",
+    "outlook_px_mode",
+    "outlook_extract_graph_token",
+    "outlook_require_graph_token",
+    "github_skip_captcha_variants",
+    "github_puzzle_max_rounds",
     "duckmail_api_url",
     "duckmail_provider_url",
     "duckmail_bearer",
@@ -162,16 +188,46 @@ CONFIG_KEYS = [
     "deepseek_ds2api_enabled",
     "deepseek_ds2api_url",
     "deepseek_ds2api_admin_key",
+    "zai_mailbox_attempts",
+    "zai_zai2api_enabled",
+    "zai_zai2api_url",
+    "zai_zai2api_auth_token",
     "grok2api_url",
     "grok2api_app_key",
     "grok2api_pool",
     "grok2api_quota",
+    "grok_cpa_enabled",
+    "grok_cpa_management_url",
+    "grok_cpa_management_token",
+    "grok_cpa_auth_dir",
+    "grok_cpa_proxy",
+    "grok_cpa_headless",
+    "grok_cpa_timeout_seconds",
+    "grok_register_mode",
+    "grok_browser_fallback",
+    "grok_clearance_mode",
+    "grok_flaresolverr_url",
+    "grok_flaresolverr_attempts",
+    "grok_turnstile_mode",
+    "grok_turnstile_timeout",
+    "grok_manual_turnstile",
+    "grok_manual_turnstile_timeout",
+    "grok_browser_mode",
+    "grok_castle_pk",
+    "grok_signup_attempts",
+    "grok_cf_impersonate",
+    "grok_cf_impersonate_fallback",
+    "grok_mailbox_attempts",
     "grok_blocked_email_domains",
     "kiro_manager_path",
     "kiro_manager_exe",
     "qwen_cpa_enabled",
     "qwen_cpa_api_url",
     "qwen_cpa_api_key",
+    "qwen_captcha_mode",
+    "opengate_enabled",
+    "opengate_api_url",
+    "opengate_api_key",
     "qwen_blocked_email_domains",
     "chatgpt_blocked_email_domains",
     "deepseek_blocked_email_domains",
@@ -279,10 +335,31 @@ def get_config():
         )
     if not str(all_cfg.get("deepseek_ds2api_enabled", "") or "").strip():
         all_cfg["deepseek_ds2api_enabled"] = "0"
+    if not all_cfg.get("zai_mailbox_attempts"):
+        all_cfg["zai_mailbox_attempts"] = "3"
+    if not str(all_cfg.get("zai_zai2api_enabled", "") or "").strip():
+        all_cfg["zai_zai2api_enabled"] = "0"
     if not str(all_cfg.get("email_domain_rule_enabled", "") or "").strip():
         all_cfg["email_domain_rule_enabled"] = "0"
     if not str(all_cfg.get("email_domain_level_count", "") or "").strip():
         all_cfg["email_domain_level_count"] = "2"
+    for flag_key in (
+        "feature_claude_register",
+        "feature_github_register",
+        "feature_outlook_producer",
+        "feature_vision_captcha",
+        "feature_capsolver",
+    ):
+        if not str(all_cfg.get(flag_key, "") or "").strip():
+            all_cfg[flag_key] = "0"
+    if not str(all_cfg.get("captcha_max_provider_attempts", "") or "").strip():
+        all_cfg["captcha_max_provider_attempts"] = "3"
+    if not str(all_cfg.get("vision_review_enabled", "") or "").strip():
+        all_cfg["vision_review_enabled"] = "0"
+    if not str(all_cfg.get("vision_max_rounds", "") or "").strip():
+        all_cfg["vision_max_rounds"] = "3"
+    if not str(all_cfg.get("vision_shot_retention_days", "") or "").strip():
+        all_cfg["vision_shot_retention_days"] = "3"
     # 只返回已知 key，未设置的返回空字符串
     return {k: all_cfg.get(k, "") for k in CONFIG_KEYS}
 
@@ -309,6 +386,27 @@ def update_config(body: ConfigUpdate):
         if level_count < 2:
             raise HTTPException(status_code=400, detail="域名级数不能小于 2")
         safe["email_domain_level_count"] = str(level_count)
+    from core.flags import FEATURE_FLAG_KEYS, normalize_flag_value
+
+    for flag_key in FEATURE_FLAG_KEYS:
+        if flag_key in safe:
+            safe[flag_key] = normalize_flag_value(safe.get(flag_key))
+    if "captcha_max_provider_attempts" in safe:
+        try:
+            attempts = int(str(safe.get("captcha_max_provider_attempts", "")).strip() or "3")
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="captcha_max_provider_attempts 必须是整数") from exc
+        if attempts < 1:
+            raise HTTPException(status_code=400, detail="captcha_max_provider_attempts 不能小于 1")
+        safe["captcha_max_provider_attempts"] = str(attempts)
+    if "vision_review_enabled" in safe:
+        safe["vision_review_enabled"] = normalize_flag_value(safe.get("vision_review_enabled"))
+    for bool_key in (
+        "outlook_extract_graph_token",
+        "outlook_require_graph_token",
+    ):
+        if bool_key in safe:
+            safe[bool_key] = normalize_flag_value(safe.get(bool_key))
     config_store.set_many(safe)
     return {"ok": True, "updated": list(safe.keys())}
 

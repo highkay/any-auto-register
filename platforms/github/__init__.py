@@ -1,0 +1,1 @@
+"""GitHub account registration platform."""
