@@ -98,3 +98,14 @@ slide-*.png
 # 本地数据文件
 account_manager.db
 .codex/config.toml
+
+# 本地一次性 / 临时调试产物（不入库）
+/_dump_*.py
+/_set_*.py
+/ds.md
+docs/artifacts/
+scripts/_tmp*
+scripts/_e2e_*_tmp*
+scripts/oneoff_*
+scripts/*_tmp.py
+.smoke_backend*.log
