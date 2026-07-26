@@ -55,6 +55,7 @@
 - OpenBlockLabs
 - Qwen
 - Trae.ai
+- Z.ai
 
 说明：
 
@@ -67,7 +68,7 @@
 - **多平台账号注册与管理**：统一的账号列表、详情、导入、导出、删除、批量操作
 - **多执行器模式**：纯协议、无头浏览器、有头浏览器
 - **多邮箱服务接入**：支持内置、第三方、自建 Worker 邮箱，以及远端 OutlookEmail 普通邮箱池等多种方案
-- **验证码支持**：YesCaptcha、本地 Turnstile Solver（Camoufox）
+- **验证码支持**：YesCaptcha / 兼容 `createTask + getTaskResult` 的本地实例、本地 Turnstile Solver（Camoufox）
 - **代理能力**：代理池轮询、代理状态维护、注册过程代理接入
 - **批量注册**：支持注册数量、并发数、每个账号启动延迟设置
 - **实时日志**：前端实时查看注册日志
@@ -149,7 +150,7 @@
 | YYDS Mail / MaliAPI | `maliapi` | 支持域名与自动域名策略 |
 | GPTMail | `gptmail` | 基于 GPTMail API 生成临时邮箱并轮询邮件，支持已知域名时本地拼装随机地址 |
 | EduMail.su | `edumail` | Livewire 网页邮箱，支持随机地址与可选指定域名 |
-| Imail.edu.vn | `imail` | Livewire 教育邮箱，支持随机地址与可选指定域名；若某个平台需要避开特定后缀，请到该平台的邮箱黑名单配置里维护 |
+| Imail.edu.vn | `imail` | Livewire 教育邮箱，默认会跳过已知被 DeepSeek 拒绝的域名 |
 | Boomlify Edu Temp Mail | `boomlify` | 走 `v1.boomlify.com` 公共 API；若某个平台需要避开特定后缀，请到该平台的邮箱黑名单配置里维护 |
 | Nullsto | `nullsto` | 通过站点前端配置提取 Supabase 接口并生成邮箱 |
 | Cloudflare 邮件路由 | `cfrouting` | 不走 Worker；假设你已在 Cloudflare 配好邮件路由转发，本项目只负责生成别名并直接轮询目标邮箱 IMAP，目标邮箱可用 QQ 或个人 Gmail |
@@ -213,6 +214,42 @@ Kiro 当前风控较严格，邮箱方案会显著影响成功率。当前项目
 - **项目内置临时邮箱成功率：0%**
 
 因此进行 **Kiro (AWS Builder ID)** 注册时，建议优先使用**自建邮箱**。
+
+### Z.ai / 阿里云验证码说明
+
+`zai` 平台当前走的是 **浏览器注册闭环**，并且约束与其他纯协议平台注册不同：
+
+- 当前只支持 **mailbox provider 自动分配邮箱**，不支持直接传入固定邮箱后再人工接管验证邮件。
+- 执行器当前只开放 **`headless` / `headed`**。
+- 阿里云验证码识别依赖全局 `YesCaptcha` 配置，但可以把它指向**本地 ohmycaptcha 实例**：
+  - `yescaptcha_api_base = http://127.0.0.1:38010`
+  - `yescaptcha_key = <你的 ohmycaptcha CLIENT_KEY>`
+- 当前 `zai` 主链已经切到**同会话阿里云动作任务**：
+  - 页面内安装 Aliyun hook 与网络抓取
+  - 优先调用 `AliyunSlideActionTask`
+  - 页面内拖动滑块并从真实会话里等待 `captchaVerifyParam`
+  - 若挑战被拒绝，会刷新题面并重试
+- 注册闭环仍然由浏览器会话完成：
+  - 注册页填写
+  - 页面内完成 Aliyun 验证并获取 `captchaVerifyParam`
+  - 页面内发起 signup 请求
+  - 验证邮件链接打开
+  - `finish_signup`
+  - Bearer Token 抽取
+- `qwen` 现在也复用了同一套页面内 Aliyun WAF 处理思路：
+  - 若 `POST /api/v1/auths/signup` 被阿里云 WAF 滑块页接管
+  - 会在当前浏览器会话里识别并拖动滑块
+  - 挑战解除后继续等待 token / 登录态落地，而不是直接报 `no token after submit`
+- 注册成功后，账号详情会保存：
+  - `token`
+  - `username`
+  - `profile_image_url`
+  - `verify_link`
+  - `captcha_verify_param`
+- 如需自动上传到 `zai2api`，可在“全局配置 → Z.ai”里配置：
+  - `zai_zai2api_enabled`
+  - `zai_zai2api_url`
+  - `zai_zai2api_auth_token`
 
 ## 快速开始
 

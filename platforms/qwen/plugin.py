@@ -1,10 +1,12 @@
 """Qwen (chat.qwen.ai) platform plugin for Any Auto Register.
 
-Registration flow (verified):
-    - Fill form (Name + Email + Password + Confirm + Terms) → Submit
-    - JWT token issued immediately in "token" cookie
-    - Activation email sent — account needs activation link visit
-    - Activation URL is called via API to complete registration
+Registration flow (aligned with qwen2api):
+    - Browser form submit (Name + Email + Password + Confirm + Terms)
+    - Solve Aliyun WAF slider in-session when needed
+    - Capture browser cookies (JWT may arrive only after activation)
+    - Wait for activation email and open the link with the same cookie jar
+    - OAuth device-code flow via Cookie authorize API to get access/refresh tokens
+    - Optional: upload email+password to OpenGate / CPA
 """
 
 import json
@@ -106,42 +108,93 @@ class QwenPlatform(BasePlatform):
         from platforms.qwen.core import (
             QwenRegister,
             call_activation_api,
-            wait_for_activation_link,
+            disable_qwen_memory_features,
+            obtain_qwen_oauth_tokens_with_cookies,
             obtain_qwen_oauth_tokens_with_login,
+            wait_for_activation_link,
         )
+        from core.config_store import config_store
 
         log = getattr(self, "_log_fn", print)
+        # qwen2api default: discard captcha attempts — do NOT use ohmycaptcha/yescaptcha.
+        # solve = legacy in-session slide solver; manual = headed human solve.
+        captcha_mode = str(
+            (self.config.extra or {}).get("qwen_captcha_mode")
+            or config_store.get("qwen_captcha_mode", "")
+            or "discard"
+        ).strip().lower() or "discard"
+        captcha_solver = None
+        if captcha_mode == "solve":
+            yescaptcha_key = self.config.extra.get("yescaptcha_key") or config_store.get(
+                "yescaptcha_key", ""
+            )
+            captcha_solver = self._make_captcha(key=yescaptcha_key)
+            log("[Qwen] captcha_mode=solve（遗留路径，将调用验证码求解器）")
+        elif captcha_mode == "manual":
+            log("[Qwen] captcha_mode=manual（headed：请在浏览器中手动完成阿里云验证码）")
+        else:
+            captcha_mode = "discard"
+            log("[Qwen] captcha_mode=discard（对齐 qwen2api：遇验证码丢弃重试，不调用求解器）")
 
-        mail_acct = self.mailbox.get_email() if self.mailbox else None
-        email = email or (mail_acct.email if mail_acct else None)
+        mail_acct = None
+        before_ids: set = set()
+        if self.mailbox:
+            # Prefer the email passed in by the task layer; only mint a new mailbox
+            # address when the caller did not provide one (avoid burning two addresses).
+            if email:
+                class _BoundMail:
+                    def __init__(self, addr: str):
+                        self.email = addr
+                        self.account_id = addr
+
+                mail_acct = _BoundMail(str(email))
+                try:
+                    before_ids = self.mailbox.get_current_ids(mail_acct) or set()
+                except Exception:
+                    before_ids = set()
+            else:
+                mail_acct = self.mailbox.get_email()
+                email = mail_acct.email if mail_acct else None
+                try:
+                    before_ids = self.mailbox.get_current_ids(mail_acct) if mail_acct else set()
+                except Exception:
+                    before_ids = set()
         if not email:
             raise RuntimeError("Qwen registration requires an email address")
 
-        log(f"[Qwen] 开始注册流程")
+        log("[Qwen] 开始注册流程（对齐 qwen2api: 表单 → 激活邮件 → Cookie OAuth）")
         log(f"[Qwen] 邮箱: {email}")
-        before_ids = self.mailbox.get_current_ids(mail_acct) if mail_acct else set()
         otp_timeout = self.get_mailbox_otp_timeout()
 
         with self._make_executor() as ex:
-            reg = QwenRegister(executor=ex, log_fn=log)
+            reg = QwenRegister(
+                executor=ex,
+                log_fn=log,
+                captcha_solver=captcha_solver,
+                captcha_mode=captcha_mode,
+                task_control=getattr(self, "_task_control", None),
+            )
             result = reg.register(email=email, password=password)
 
-        tokens = result.get("tokens", {})
-        access_token = (
-            tokens.get("token")
-            or tokens.get("cookie:token")
-            or tokens.get("access_token", "")
-        )
-
         if result.get("status") != "success":
-            reason = str(result.get("error") or "no token")
+            reason = str(result.get("error") or "signup failed")
             log(f"[Qwen] 注册失败: {reason}")
             raise RuntimeError(f"Qwen registration failed: {reason}")
-        if not access_token:
-            log("[Qwen] 注册失败: 未获取到 access token")
-            raise RuntimeError("Qwen registration failed: no auth token extracted")
 
-        log("[Qwen] 注册成功，开始激活流程...")
+        tokens = result.get("tokens", {}) if isinstance(result.get("tokens"), dict) else {}
+        cookies = result.get("cookies", {}) if isinstance(result.get("cookies"), dict) else {}
+        access_token = str(
+            tokens.get("token")
+            or tokens.get("cookie:token")
+            or tokens.get("access_token")
+            or cookies.get("token")
+            or ""
+        ).strip()
+        pending_activation = bool(result.get("pending_activation")) or not access_token
+        log(
+            f"[Qwen] 表单阶段完成: token={'有' if access_token else '无'}, "
+            f"cookies={len(cookies)}, pending_activation={pending_activation}"
+        )
 
         activated = False
         if self.mailbox and mail_acct:
@@ -150,16 +203,23 @@ class QwenPlatform(BasePlatform):
                 self.mailbox,
                 mail_acct=mail_acct,
                 account_email=email,
-                timeout=max(30, min(120, int(otp_timeout or 120))),
+                timeout=max(30, min(180, int(otp_timeout or 120))),
                 before_ids=before_ids,
                 log_fn=log,
             )
 
             if activation_link:
-                log(f"[Qwen] 找到激活链接，正在激活...")
-                act_result = call_activation_api(activation_link)
-                activated = act_result.get("ok", False)
-                log(f"[Qwen] 激活结果: {'成功' if activated else '失败'}")
+                log("[Qwen] 找到激活链接，使用浏览器 Cookie 会话激活...")
+                act_result = call_activation_api(activation_link, cookies=cookies)
+                activated = bool(act_result.get("ok"))
+                act_cookies = act_result.get("cookies") if isinstance(act_result.get("cookies"), dict) else {}
+                if act_cookies:
+                    cookies = {**cookies, **act_cookies}
+                token_after = str(act_result.get("token") or cookies.get("token") or "").strip()
+                if token_after:
+                    access_token = token_after
+                    tokens = {**tokens, "token": token_after, "cookie:token": token_after}
+                log(f"[Qwen] 激活结果: {'成功' if activated else '失败'} status={act_result.get('status_code')}")
             else:
                 log("[Qwen] 未找到激活链接，跳过激活")
         else:
@@ -169,15 +229,29 @@ class QwenPlatform(BasePlatform):
         oauth_access_token, refresh_token, resource_url = _extract_qwen_oauth_fields(raw_tokens)
 
         if not refresh_token:
-            log("[Qwen] 未获取到 refresh_token，尝试通过登录获取 OAuth tokens...")
-            with self._make_executor() as ex:
-                oauth_data = obtain_qwen_oauth_tokens_with_login(
-                    ex.page,
+            # Primary path (qwen2api): authorize device code with Cookie header.
+            if cookies:
+                log("[Qwen] 尝试 Cookie 会话 OAuth device flow...")
+                oauth_data = obtain_qwen_oauth_tokens_with_cookies(
+                    cookies,
                     email=str(result.get("email") or email),
-                    password=str(result.get("password") or password or ""),
                     log_fn=log,
-                    poll_timeout_seconds=20,
+                    poll_timeout_seconds=60,
                 )
+            else:
+                oauth_data = {}
+
+            if not oauth_data:
+                log("[Qwen] Cookie OAuth 未拿到 refresh_token，回退密码登录 OAuth...")
+                with self._make_executor() as ex:
+                    oauth_data = obtain_qwen_oauth_tokens_with_login(
+                        ex.page,
+                        email=str(result.get("email") or email),
+                        password=str(result.get("password") or password or ""),
+                        log_fn=log,
+                        poll_timeout_seconds=30,
+                    )
+
             if oauth_data:
                 got_refresh = str(oauth_data.get("refresh_token") or "").strip()
                 if got_refresh:
@@ -193,21 +267,38 @@ class QwenPlatform(BasePlatform):
                         or resource_url
                         or "portal.qwen.ai"
                     ).strip()
-                    log(f"[Qwen] 成功获取 OAuth tokens")
+                    if oauth_access_token:
+                        access_token = access_token or oauth_access_token
+                    log("[Qwen] 成功获取 OAuth tokens")
                     log(f"[Qwen] refresh_token: {refresh_token[:20]}...")
                     log(f"[Qwen] resource_url: {resource_url}")
                 else:
-                    log("[Qwen] OAuth 登录成功但未获取到 refresh_token")
+                    log("[Qwen] OAuth 完成但未获取到 refresh_token")
             else:
-                log("[Qwen] OAuth 登录失败，无法获取 refresh_token")
+                log("[Qwen] OAuth 失败，无法获取 refresh_token")
         else:
             log(f"[Qwen] 已获取 refresh_token: {refresh_token[:20]}...")
+
+        if not access_token and oauth_access_token:
+            access_token = oauth_access_token
+        if not access_token:
+            log("[Qwen] 注册失败: 激活/OAuth 后仍无 access token")
+            raise RuntimeError(
+                "Qwen registration failed: no auth token after activation/oauth"
+            )
+
+        # Best-effort: mirror qwen2api post-register settings tweak.
+        if disable_qwen_memory_features(access_token):
+            log("[Qwen] 已关闭新账号记忆功能")
 
         extra = {
             "activated": activated,
             "full_name": result.get("full_name", ""),
             "raw_tokens": raw_tokens,
+            "pending_activation": pending_activation and not activated,
         }
+        if cookies:
+            extra["cookies"] = cookies
         if oauth_access_token:
             extra["oauth_access_token"] = oauth_access_token
             extra["qwen_oauth_access_token"] = oauth_access_token
@@ -269,6 +360,19 @@ class QwenPlatform(BasePlatform):
                     {"key": "api_key", "label": "CPA API Key", "type": "text"},
                 ],
             },
+            {
+                "id": "upload_opengate",
+                "label": "导入 OpenGate",
+                "params": [
+                    {
+                        "key": "api_url",
+                        "label": "OpenGate URL",
+                        "type": "text",
+                        "placeholder": "http://192.168.1.18:7860",
+                    },
+                    {"key": "api_key", "label": "OpenGate API Key", "type": "text"},
+                ],
+            },
         ]
 
     def execute_action(self, action_id: str, account: Account, params: dict) -> dict:
@@ -288,6 +392,7 @@ class QwenPlatform(BasePlatform):
                         provider=provider,
                         extra=cfg_extra,
                         proxy=self.config.proxy if self.config else None,
+                        platform=self.name,
                     )
                 except Exception as e:
                     return {"ok": False, "error": f"未配置可用邮箱，无法激活: {e}"}
@@ -515,5 +620,22 @@ class QwenPlatform(BasePlatform):
             if account_extra_patch:
                 resp["account_extra_patch"] = account_extra_patch
             return resp
+
+        if action_id == "upload_opengate":
+            from platforms.qwen.opengate_upload import (
+                persist_opengate_sync_result,
+                upload_to_opengate,
+            )
+
+            ok, msg, detail = upload_to_opengate(
+                account,
+                api_url=params.get("api_url"),
+                api_key=params.get("api_key"),
+            )
+            try:
+                persist_opengate_sync_result(account, ok=ok, msg=msg, detail=detail)
+            except Exception:
+                pass
+            return {"ok": ok, "data": msg, "detail": detail}
 
         raise NotImplementedError(f"Unknown action: {action_id}")

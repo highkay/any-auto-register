@@ -49,6 +49,7 @@ Based on the current `App.tsx` menu and `/api/platforms` response, the **platfor
 - OpenBlockLabs
 - Qwen
 - Trae.ai
+- Z.ai
 
 Notes:
 
@@ -59,7 +60,7 @@ Notes:
 - **Multi-platform Account Registration & Management**: Unified account list, details, import/export, deletion, batch operations
 - **Multiple Executor Modes**: Pure protocol, headless browser, headed browser
 - **Multiple Email Service Integration**: Built-in, third-party, self-hosted Worker Email, remote OutlookEmail mailbox pools, and more
-- **Captcha Support**: YesCaptcha, Local Turnstile Solver (Camoufox)
+- **Captcha Support**: YesCaptcha / local instances compatible with `createTask + getTaskResult`, Local Turnstile Solver (Camoufox)
 - **Proxy Capability**: Proxy pool rotation, proxy state maintenance, proxy integration during registration
 - **Batch Registration**: Supports setting registration count, concurrency, and startup delay per account
 - **Real-time Logs**: View registration logs in real-time on the frontend
@@ -139,7 +140,7 @@ The registration dialog in Platform Management reuses the mailbox provider selec
 | YYDS Mail / MaliAPI | `maliapi` | Supports domain and automatic domain strategy |
 | GPTMail | `gptmail` | Generates temporary emails via GPTMail API with rotation, supports random address assembly when domains are known |
 | EduMail.su | `edumail` | Livewire web mailbox with random address generation and optional domain pinning |
-| Imail.edu.vn | `imail` | Livewire education mailbox with random address generation and optional domain pinning; if a platform must avoid certain suffixes, maintain them in that platform's blocked email domain config |
+| Imail.edu.vn | `imail` | Livewire education mailbox, skips domains currently known to be rejected by DeepSeek by default |
 | Boomlify Edu Temp Mail | `boomlify` | Uses the `v1.boomlify.com` public API; if a platform must avoid certain suffixes, maintain them in that platform's blocked email domain config |
 | Nullsto | `nullsto` | Extracts the site's Supabase-facing API configuration from the frontend and generates mailboxes from it |
 | Cloudflare Mail Routing | `cfrouting` | Does not use a Worker; generates aliases for a Cloudflare-routed domain and polls the target mailbox via IMAP |

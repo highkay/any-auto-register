@@ -8,6 +8,7 @@ import asyncio
 from typing import Optional, Union
 import argparse
 from quart import Quart, request, jsonify
+from core.browser_runtime import get_chrome_executable, with_chrome_executable
 from core.proxy_utils import build_playwright_proxy_config
 
 try:
@@ -227,10 +228,20 @@ class TurnstileAPIServer:
             
             browser = None
             if self.browser_type in ['chromium', 'chrome', 'msedge'] and playwright:
+                launch_kwargs = {
+                    "headless": self.headless,
+                    "args": browser_args,
+                }
+                if self.browser_type == "msedge":
+                    launch_kwargs["channel"] = "msedge"
+                elif self.browser_type in ("chrome", "chromium"):
+                    chrome = get_chrome_executable()
+                    if chrome:
+                        launch_kwargs["executable_path"] = chrome
+                    else:
+                        launch_kwargs["channel"] = self.browser_type
                 browser = await playwright.chromium.launch(
-                    channel=self.browser_type,
-                    headless=self.headless,
-                    args=browser_args
+                    **with_chrome_executable(launch_kwargs)
                 )
             elif self.browser_type == "camoufox" and camoufox:
                 browser = await camoufox.start()

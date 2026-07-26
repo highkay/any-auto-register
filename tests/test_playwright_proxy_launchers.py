@@ -1,9 +1,18 @@
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from platforms.grok.core import GrokRegister
 from platforms.kiro.core import KiroRegister
 from platforms.nvidia.core import NvidiaRegister
+
+
+def _assert_prefers_f_chrome(launch_kwargs: dict) -> None:
+    chrome = Path(r"F:\chrome\chrome.exe")
+    if not chrome.is_file():
+        return
+    assert launch_kwargs.get("executable_path") == str(chrome.resolve())
+    assert "channel" not in launch_kwargs
 
 
 class PlaywrightProxyLauncherTests(unittest.TestCase):
@@ -35,10 +44,12 @@ class PlaywrightProxyLauncherTests(unittest.TestCase):
 
         self.assertIs(launched_browser, browser)
         build_proxy_mock.assert_called_once_with("socks5h://127.0.0.1:1080")
+        launch_kwargs = playwright.chromium.launch.call_args.kwargs
         self.assertEqual(
-            playwright.chromium.launch.call_args.kwargs["proxy"],
+            launch_kwargs["proxy"],
             {"server": "socks5://127.0.0.1:1080"},
         )
+        _assert_prefers_f_chrome(launch_kwargs)
 
     @mock.patch("platforms.grok.core.ensure_browser_display_available")
     @mock.patch("platforms.grok.core.resolve_browser_headless", return_value=(True, "test"))
@@ -69,10 +80,12 @@ class PlaywrightProxyLauncherTests(unittest.TestCase):
 
         self.assertIs(launched_browser, browser)
         build_proxy_mock.assert_called_once_with("socks5h://127.0.0.1:1080")
+        launch_kwargs = playwright.chromium.launch.call_args.kwargs
         self.assertEqual(
-            playwright.chromium.launch.call_args.kwargs["proxy"],
+            launch_kwargs["proxy"],
             {"server": "socks5://127.0.0.1:1080"},
         )
+        _assert_prefers_f_chrome(launch_kwargs)
 
     @mock.patch("platforms.kiro.core.ensure_browser_display_available")
     @mock.patch("platforms.kiro.core.resolve_browser_headless", return_value=(True, "test"))
@@ -109,10 +122,12 @@ class PlaywrightProxyLauncherTests(unittest.TestCase):
         reg._init_browser()
 
         build_proxy_mock.assert_called_once_with("socks5h://127.0.0.1:1080")
+        launch_kwargs = playwright.chromium.launch.call_args.kwargs
         self.assertEqual(
-            playwright.chromium.launch.call_args.kwargs["proxy"],
+            launch_kwargs["proxy"],
             {"server": "socks5://127.0.0.1:1080"},
         )
+        _assert_prefers_f_chrome(launch_kwargs)
 
 
 if __name__ == "__main__":

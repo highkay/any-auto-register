@@ -20,6 +20,7 @@ from urllib.parse import urlencode, urlparse, parse_qs
 from core.browser_runtime import (
     ensure_browser_display_available,
     resolve_browser_headless,
+    with_chrome_executable,
 )
 from urllib.request import Request, build_opener
 from core.proxy_utils import build_playwright_proxy_config, build_requests_proxy_config
@@ -29,7 +30,7 @@ try:
 except ImportError:
     cffi_requests: Any = None
 
-from playwright.sync_api import sync_playwright, TimeoutError, Page, Locator
+from core.browser_backend import Locator, Page, TimeoutError, sync_playwright
 
 try:
     stealth_sync = importlib.import_module("playwright_stealth").stealth_sync
@@ -238,13 +239,13 @@ class KiroRegister:
             self.headless, default_headless=False
         )
         ensure_browser_display_available(headless)
-        launch_opts: dict[str, Any] = {
-            "headless": headless,
-            "args": [
+        launch_opts: dict[str, Any] = with_chrome_executable(
+            headless=headless,
+            args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
             ],
-        }
+        )
         if self.proxy:
             proxy_cfg = build_playwright_proxy_config(self.proxy)
             if proxy_cfg:

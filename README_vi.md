@@ -49,6 +49,7 @@ Theo menu `App.tsx` hiện tại và kết quả từ `/api/platforms`, **các n
 - OpenBlockLabs
 - Qwen
 - Trae.ai
+- Z.ai
 
 Ghi chú:
 
@@ -59,7 +60,7 @@ Ghi chú:
 - **Quản lý & đăng ký tài khoản đa nền tảng**: Danh sách tài khoản thống nhất, chi tiết, nhập/xuất, xóa, thao tác hàng loạt
 - **Nhiều chế độ thực thi**: Giao thức thuần, trình duyệt không giao diện (headless), trình duyệt có giao diện (headed)
 - **Tích hợp nhiều dịch vụ email**: Tích hợp sẵn, bên thứ 3, email Worker tự host, pool mailbox OutlookEmail từ xa và nhiều giải pháp khác
-- **Hỗ trợ Captcha**: YesCaptcha, Turnstile Solver cục bộ (Camoufox)
+- **Hỗ trợ Captcha**: YesCaptcha / instance cục bộ tương thích `createTask + getTaskResult`, Turnstile Solver cục bộ (Camoufox)
 - **Hỗ trợ Proxy**: Luân phiên pool proxy, duy trì trạng thái proxy, tích hợp proxy trong quá trình đăng ký
 - **Đăng ký hàng loạt**: Hỗ trợ cài đặt số lượng đăng ký, số lượng đồng thời, độ trễ khởi động giữa mỗi tài khoản
 - **Log thời gian thực**: Xem log đăng ký trực tiếp trên frontend
@@ -139,7 +140,7 @@ Hộp thoại đăng ký trong phần Quản lý nền tảng sẽ dùng lại m
 | YYDS Mail / MaliAPI | `maliapi` | Hỗ trợ chiến lược domain tự động |
 | GPTMail | `gptmail` | Tạo email tạm thời qua GPTMail API và xoay vòng, hỗ trợ ghép ngẫu nhiên khi đã biết domain |
 | EduMail.su | `edumail` | Hộp thư web Livewire, hỗ trợ tạo địa chỉ ngẫu nhiên và có thể khóa domain nếu cần |
-| Imail.edu.vn | `imail` | Hộp thư giáo dục Livewire, hỗ trợ địa chỉ ngẫu nhiên và khóa domain khi cần; nếu một nền tảng cần tránh suffix cụ thể, hãy cấu hình trong blacklist domain email của nền tảng đó |
+| Imail.edu.vn | `imail` | Hộp thư giáo dục Livewire, mặc định bỏ qua các domain đã biết là bị DeepSeek từ chối |
 | Boomlify Edu Temp Mail | `boomlify` | Dùng public API `v1.boomlify.com`; nếu một nền tảng cần tránh suffix cụ thể, hãy cấu hình trong blacklist domain email của nền tảng đó |
 | Nullsto | `nullsto` | Trích cấu hình API kiểu Supabase từ frontend của trang để tạo hộp thư |
 | Cloudflare Mail Routing | `cfrouting` | Không dùng Worker; tạo bí danh trên domain đã route qua Cloudflare và đọc thư từ hộp thư đích qua IMAP |

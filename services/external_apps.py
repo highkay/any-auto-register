@@ -79,6 +79,13 @@ def _get_setting(key: str, default: str = "") -> str:
         return default
 
 
+def _normalize_grok2api_app_key(value: str) -> str:
+    text = str(value or "").strip()
+    if text.lower().startswith("sk-"):
+        return text[3:]
+    return text
+
+
 def _creationflags() -> int:
     return getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -517,7 +524,9 @@ def _status_one(name: str) -> dict[str, Any]:
         "management_key": (
             _get_setting("cliproxyapi_management_key", "cliproxyapi")
             if name == "cliproxyapi"
-            else _get_setting("grok2api_app_key", "grok2api")
+            else _normalize_grok2api_app_key(
+                _get_setting("grok2api_app_key", "grok2api")
+            )
             if name == "grok2api"
             else ""
         ),
@@ -721,7 +730,7 @@ def _ensure_grok2api_runtime_config(repo: Path):
     data_dir = repo / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     config_file = data_dir / "config.toml"
-    app_key = _get_setting("grok2api_app_key", "grok2api")
+    app_key = _normalize_grok2api_app_key(_get_setting("grok2api_app_key", "grok2api"))
     default_config = repo / "config.defaults.toml"
 
     if not config_file.exists():

@@ -57,5 +57,19 @@ if (-not (Test-Path $resolvedPythonExe)) {
 $env:HOST = $BindHost
 $env:PORT = [string]$Port
 
+# 尊重 .env 中的 APP_ENABLE_SOLVER（未设置时保持现有进程环境）
+$dotenvPath = Join-Path $root ".env"
+if ((-not $env:APP_ENABLE_SOLVER) -and (Test-Path $dotenvPath)) {
+    $solverLine = Get-Content -LiteralPath $dotenvPath -Encoding UTF8 |
+        Where-Object { $_ -match '^\s*APP_ENABLE_SOLVER\s*=' } |
+        Select-Object -Last 1
+    if ($solverLine -match '^\s*APP_ENABLE_SOLVER\s*=\s*(.+)\s*$') {
+        $env:APP_ENABLE_SOLVER = $Matches[1].Trim().Trim('"').Trim("'")
+    }
+}
+if ($env:APP_ENABLE_SOLVER -and ($env:APP_ENABLE_SOLVER.ToLower() -in @('0', 'false', 'no'))) {
+    Write-Host "[INFO] 本地 Turnstile Solver 已禁用 (APP_ENABLE_SOLVER=$($env:APP_ENABLE_SOLVER))"
+}
+
 Write-Host "[INFO] Python: $resolvedPythonExe"
 & $resolvedPythonExe main.py

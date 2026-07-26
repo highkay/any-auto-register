@@ -36,7 +36,7 @@ import { usePersistentChatGPTRegistrationMode } from '@/hooks/usePersistentChatG
 import { parseBooleanConfigValue } from '@/lib/configValueParsers'
 import { buildChatGPTRegistrationRequestAdapter } from '@/lib/chatgptRegistrationRequestAdapter'
 import { apiFetch } from '@/lib/utils'
-import { normalizeExecutorForPlatform } from '@/lib/platformExecutorOptions'
+import { getExecutorOptions, normalizeExecutorForPlatform } from '@/lib/platformExecutorOptions'
 
 const { Text } = Typography
 
@@ -566,6 +566,7 @@ export default function Accounts() {
   const [cpaSyncLoading, setCpaSyncLoading] = useState<'pending' | 'selected' | ''>('')
   const [cpaUploadLoading, setCpaUploadLoading] = useState<'all' | 'selected' | ''>('')
   const [statusSyncLoading, setStatusSyncLoading] = useState<'probe_selected' | 'probe_all' | 'remote_selected' | 'remote_all' | ''>('')
+  const registerExecutorOptions = getExecutorOptions(currentPlatform)
 
   useEffect(() => {
     if (platform) setCurrentPlatform(platform)
@@ -617,6 +618,8 @@ export default function Accounts() {
     message.success('已复制')
   }
   const isApiKeyPlatform = ['nvidia', 'cerebras'].includes(currentPlatform)
+  const isZaiPlatform = currentPlatform === 'zai'
+  const isGrokPlatform = currentPlatform === 'grok'
 
   const getRefreshToken = (record: any): string => {
     try {
@@ -634,6 +637,12 @@ export default function Accounts() {
     } catch {
       return record.token || ''
     }
+  }
+
+  const getZaiToken = (record: any): string => String(record?.token || '').trim()
+  const getGrokSsoToken = (record: any): string => {
+    const extra = record?.extra && typeof record.extra === 'object' ? record.extra : parseExtraJson(record?.extra_json)
+    return String(extra?.sso || extra?.sso_token || extra?.sso_rw || record?.token || '').trim()
   }
 
   const getAccountUsername = (record: any): string => {
@@ -687,6 +696,8 @@ export default function Accounts() {
       header.push('accessToken', 'refreshToken', 'clientId', 'clientSecret')
     } else if (currentPlatform === 'chatgpt') {
       header.push('token', 'refresh_token')
+    } else if (currentPlatform === 'grok') {
+      header.push('sso')
     } else {
       header.push('token')
     }
@@ -701,6 +712,8 @@ export default function Accounts() {
       } else if (currentPlatform === 'chatgpt') {
         baseRow.push(quoteCsv(a.token))
         baseRow.push(quoteCsv(getRefreshToken(a)))
+      } else if (currentPlatform === 'grok') {
+        baseRow.push(quoteCsv(getGrokSsoToken(a)))
       } else {
         baseRow.push(quoteCsv(a.token))
       }
@@ -761,10 +774,18 @@ export default function Accounts() {
 
   const handleRegister = async () => {
     const values = await registerForm.validateFields()
+    if (
+      currentPlatform === 'deepseek' &&
+      values.captcha_solver === 'manual' &&
+      values.executor_type !== 'headed'
+    ) {
+      message.error('DeepSeek 手动发码需要选择“有头浏览器”执行器')
+      return
+    }
     setRegisterLoading(true)
     try {
       const cfg = await apiFetch('/config')
-      const executorType = normalizeExecutorForPlatform(currentPlatform, cfg.default_executor)
+      const phoneVerificationProvider = cfg.phone_verification_provider || 'auto'
       const registerExtra = {
         mail_provider: cfg.mail_provider || 'luckmail',
         applemail_base_url: cfg.applemail_base_url,
@@ -794,6 +815,10 @@ export default function Accounts() {
         cloudmail_domain: cfg.cloudmail_domain,
         cloudmail_subdomain: cfg.cloudmail_subdomain,
         cloudmail_timeout: cfg.cloudmail_timeout,
+        outlookemail_base_url: cfg.outlookemail_base_url,
+        outlookemail_password: cfg.outlookemail_password,
+        outlookemail_api_key: cfg.outlookemail_api_key,
+        outlookemail_group_id: cfg.outlookemail_group_id,
         duckmail_address: cfg.duckmail_address,
         duckmail_password: cfg.duckmail_password,
         duckmail_api_url: cfg.duckmail_api_url,
@@ -804,6 +829,10 @@ export default function Accounts() {
         freemail_username: cfg.freemail_username,
         freemail_password: cfg.freemail_password,
         freemail_domain: cfg.freemail_domain,
+        chatgpt_blocked_email_domains: cfg.chatgpt_blocked_email_domains,
+        grok_blocked_email_domains: cfg.grok_blocked_email_domains,
+        qwen_blocked_email_domains: cfg.qwen_blocked_email_domains,
+        deepseek_blocked_email_domains: cfg.deepseek_blocked_email_domains,
         cfworker_api_url: cfg.cfworker_api_url,
         cfworker_admin_token: cfg.cfworker_admin_token,
         cfworker_custom_auth: cfg.cfworker_custom_auth,
@@ -812,16 +841,48 @@ export default function Accounts() {
         cfworker_random_subdomain: parseBooleanConfigValue(cfg.cfworker_random_subdomain),
         cfworker_random_name_subdomain: parseBooleanConfigValue(cfg.cfworker_random_name_subdomain),
         cfworker_fingerprint: cfg.cfworker_fingerprint,
+        phone_verification_provider: phoneVerificationProvider,
+        smstome_global_file: cfg.smstome_global_file,
+        smstome_used_numbers_dir: cfg.smstome_used_numbers_dir,
+        smstome_task_name: cfg.smstome_task_name,
         smstome_cookie: cfg.smstome_cookie,
         smstome_country_slugs: cfg.smstome_country_slugs,
         smstome_phone_attempts: cfg.smstome_phone_attempts,
         smstome_otp_timeout_seconds: cfg.smstome_otp_timeout_seconds,
         smstome_poll_interval_seconds: cfg.smstome_poll_interval_seconds,
         smstome_sync_max_pages_per_country: cfg.smstome_sync_max_pages_per_country,
+        five_sim_api_key: cfg.five_sim_api_key,
+        five_sim_product: cfg.five_sim_product,
+        five_sim_country: cfg.five_sim_country,
+        five_sim_operator: cfg.five_sim_operator,
+        five_sim_max_price: cfg.five_sim_max_price,
+        five_sim_phone_attempts: cfg.five_sim_phone_attempts,
+        five_sim_otp_timeout_seconds: cfg.five_sim_otp_timeout_seconds,
+        five_sim_poll_interval_seconds: cfg.five_sim_poll_interval_seconds,
+        hero_sms_api_key: cfg.hero_sms_api_key,
+        hero_sms_service: cfg.hero_sms_service,
+        hero_sms_country: cfg.hero_sms_country,
+        hero_sms_operator: cfg.hero_sms_operator,
+        hero_sms_max_price: cfg.hero_sms_max_price,
+        hero_sms_phone_attempts: cfg.hero_sms_phone_attempts,
+        hero_sms_otp_timeout_seconds: cfg.hero_sms_otp_timeout_seconds,
+        hero_sms_poll_interval_seconds: cfg.hero_sms_poll_interval_seconds,
+        free_sms_tool_base_url: cfg.free_sms_tool_base_url,
+        free_sms_tool_api_key: cfg.free_sms_tool_api_key,
+        free_sms_tool_app_slug: cfg.free_sms_tool_app_slug,
+        free_sms_tool_app_name: cfg.free_sms_tool_app_name,
+        free_sms_tool_country_name: cfg.free_sms_tool_country_name,
+        free_sms_tool_provider_id: cfg.free_sms_tool_provider_id,
+        free_sms_tool_claim_ttl_minutes: cfg.free_sms_tool_claim_ttl_minutes,
+        free_sms_tool_include_cooling: cfg.free_sms_tool_include_cooling,
+        free_sms_tool_phone_attempts: cfg.free_sms_tool_phone_attempts,
+        free_sms_tool_otp_timeout_seconds: cfg.free_sms_tool_otp_timeout_seconds,
+        free_sms_tool_poll_interval_seconds: cfg.free_sms_tool_poll_interval_seconds,
         luckmail_base_url: cfg.luckmail_base_url,
         luckmail_api_key: cfg.luckmail_api_key,
         luckmail_email_type: cfg.luckmail_email_type,
         luckmail_domain: cfg.luckmail_domain,
+        zai_mailbox_attempts: cfg.zai_mailbox_attempts,
       }
       const chatgptRegistrationRequestAdapter =
         buildChatGPTRegistrationRequestAdapter(
@@ -839,8 +900,8 @@ export default function Accounts() {
           count: values.count,
           concurrency: values.concurrency,
           register_delay_seconds: values.register_delay_seconds || 0,
-          executor_type: executorType,
-          captcha_solver: cfg.default_captcha_solver || 'yescaptcha',
+          executor_type: values.executor_type,
+          captcha_solver: values.captcha_solver,
           proxy: null,
           extra: adaptedRegisterExtra,
         }),
@@ -849,6 +910,19 @@ export default function Accounts() {
     } finally {
       setRegisterLoading(false)
     }
+  }
+
+  const openRegisterModal = async () => {
+    const cfg = await apiFetch('/config')
+    registerForm.setFieldsValue({
+      executor_type: normalizeExecutorForPlatform(currentPlatform, cfg.default_executor),
+      captcha_solver: cfg.default_captcha_solver || 'yescaptcha',
+      count: 1,
+      concurrency: 1,
+      register_delay_seconds: 0,
+    })
+    setTaskId(null)
+    setRegisterModalOpen(true)
   }
 
   const handleDetailSave = async () => {
@@ -1165,7 +1239,7 @@ export default function Accounts() {
         </div>
       ),
     },
-    ...(currentPlatform === 'deepseek'
+    ...(currentPlatform === 'deepseek' || currentPlatform === 'zai'
       ? [
           {
             title: '用户名',
@@ -1206,11 +1280,11 @@ export default function Accounts() {
       ),
     },
     {
-      title: isApiKeyPlatform ? 'API Key' : 'RT',
-      key: isApiKeyPlatform ? 'api_key' : 'refresh_token',
+      title: isApiKeyPlatform ? 'API Key' : isZaiPlatform ? 'Token' : isGrokPlatform ? 'SSO' : 'RT',
+      key: isApiKeyPlatform ? 'api_key' : isZaiPlatform ? 'token' : isGrokPlatform ? 'sso' : 'refresh_token',
       width: 120,
       render: (_: any, record: any) => {
-        const value = isApiKeyPlatform ? getNvidiaApiKey(record) : getRefreshToken(record)
+        const value = isApiKeyPlatform ? getNvidiaApiKey(record) : isZaiPlatform ? getZaiToken(record) : isGrokPlatform ? getGrokSsoToken(record) : getRefreshToken(record)
         if (!value) return <span style={{ color: '#ccc' }}>-</span>
         return (
           <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -1520,7 +1594,7 @@ export default function Accounts() {
           <Button icon={<UploadOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
           <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={accounts.length === 0}>导出</Button>
           <Button icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>新增</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setRegisterModalOpen(true)}>注册</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openRegisterModal}>注册</Button>
           <Button icon={<ReloadOutlined spin={loading} />} onClick={load} />
         </Space>
       </div>
@@ -1560,6 +1634,18 @@ export default function Accounts() {
             </Form.Item>
             <Form.Item name="concurrency" label="并发数" initialValue={1} rules={[{ required: true }]}>
               <Input type="number" min={1} />
+            </Form.Item>
+            <Form.Item name="executor_type" label="执行器" rules={[{ required: true }]}>
+              <Select options={registerExecutorOptions} />
+            </Form.Item>
+            <Form.Item name="captcha_solver" label="验证码" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: 'yescaptcha', label: 'YesCaptcha' },
+                  { value: 'local_solver', label: '本地 Solver (Camoufox)' },
+                  { value: 'manual', label: '手动' },
+                ]}
+              />
             </Form.Item>
             <Form.Item name="register_delay_seconds" label="每个注册延迟(秒)" initialValue={0}>
               <InputNumber min={0} precision={1} step={0.5} style={{ width: '100%' }} placeholder="0 = 不延迟" />
@@ -1663,7 +1749,7 @@ export default function Accounts() {
                   ]}
                 />
               </Form.Item>
-              <Form.Item name="token" label={isApiKeyPlatform ? 'API Key' : 'Access Token'}>
+              <Form.Item name="token" label={isApiKeyPlatform ? 'API Key' : isZaiPlatform ? 'Bearer Token' : isGrokPlatform ? 'SSO Token' : 'Access Token'}>
                 <Input.TextArea rows={2} style={{ fontFamily: 'monospace' }} />
               </Form.Item>
             </Form>
@@ -1730,18 +1816,29 @@ export default function Accounts() {
                 <SummaryField label="最近尝试" value={currentAccount.gptLoadSync?.last_attempt_at ? formatSyncTime(currentAccount.gptLoadSync.last_attempt_at) : ''} />
               </DetailSection>
             ) : null}
-            {currentPlatform === 'deepseek' ? (
-              <DetailSection title="DeepSeek 信息">
+            {currentPlatform === 'deepseek' || currentPlatform === 'zai' ? (
+              <DetailSection title={currentPlatform === 'zai' ? 'Z.ai 信息' : 'DeepSeek 信息'}>
                 <SummaryField label="用户名" value={getAccountUsername(currentAccount)} />
-                <SummaryField
-                  label="Need Birthday"
-                  value={
-                    currentAccount?.extra?.need_birthday === undefined
-                      ? ''
-                      : String(currentAccount.extra.need_birthday)
-                  }
-                />
-                <SummaryField label="Device ID" value={currentAccount?.extra?.device_id} code />
+                {currentPlatform === 'deepseek' ? (
+                  <>
+                    <SummaryField
+                      label="Need Birthday"
+                      value={
+                        currentAccount?.extra?.need_birthday === undefined
+                          ? ''
+                          : String(currentAccount.extra.need_birthday)
+                      }
+                    />
+                    <SummaryField label="Device ID" value={currentAccount?.extra?.device_id} code />
+                  </>
+                ) : null}
+                {currentPlatform === 'zai' ? (
+                  <>
+                    <SummaryField label="Token Type" value={currentAccount?.extra?.token_type} />
+                    <SummaryField label="头像" value={currentAccount?.extra?.profile_image_url} code />
+                    <SummaryField label="验证链接" value={currentAccount?.extra?.verify_link} code />
+                  </>
+                ) : null}
               </DetailSection>
             ) : null}
             {currentPlatform === 'kiro' && currentAccount?.extra ? (

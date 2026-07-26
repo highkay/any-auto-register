@@ -15,6 +15,7 @@ from typing import Iterable, Mapping, Optional, Protocol
 from core.browser_runtime import (
     ensure_browser_display_available,
     resolve_browser_headless,
+    with_chrome_executable,
 )
 from core.config_store import ConfigStore, config_store
 from core.proxy_pool import ProxyPool, proxy_pool
@@ -312,18 +313,18 @@ class PlaywrightSentinelProvider(SentinelProvider):
         self._resolved_sdk_url = config.sdk_url
 
     def __enter__(self) -> "PlaywrightSentinelProvider":
-        from playwright.sync_api import sync_playwright
+        from core.browser_backend import sync_playwright
 
         ensure_browser_display_available(self._config.headless)
         self._playwright = sync_playwright().start()
 
-        launch_kwargs: dict[str, object] = {
-            "headless": self._config.headless,
-            "args": [
+        launch_kwargs: dict[str, object] = with_chrome_executable(
+            headless=self._config.headless,
+            args=[
                 "--no-sandbox",
                 "--disable-blink-features=AutomationControlled",
             ],
-        }
+        )
         proxy_config = build_playwright_proxy_config(self._config.proxy)
         if proxy_config:
             launch_kwargs["proxy"] = proxy_config

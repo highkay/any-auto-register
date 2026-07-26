@@ -1,17 +1,22 @@
-"""Browser runtime helpers for headless/headed resolution."""
+"""Browser runtime helpers for headless/headed resolution and Chrome path."""
 
 from __future__ import annotations
 
 import logging
 import os
 import sys
-from typing import Iterable
+from pathlib import Path
+from typing import Any, Iterable, Mapping
 
 
 logger = logging.getLogger(__name__)
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
+
+# Prefer the portable Chrome under F:\chrome for all local launches.
+DEFAULT_CHROME_EXECUTABLE = Path(r"F:\chrome\chrome.exe")
+_CHROME_ENV_NAMES = ("CHROME_EXECUTABLE", "CHROME_PATH", "PLAYWRIGHT_CHROME_PATH")
 
 
 def parse_env_bool(name: str) -> bool | None:
@@ -62,3 +67,78 @@ def ensure_browser_display_available(headless: bool) -> None:
         "当前为 Linux 有头浏览器模式，但未检测到 DISPLAY。"
         "Docker 内请启用 Xvfb；本地 Linux 请先启动图形环境或改用无头模式。"
     )
+
+
+def _normalize_chrome_candidate(raw: str | Path | None) -> Path | None:
+    if raw is None:
+        return None
+    text = str(raw).strip().strip('"').strip("'")
+    if not text:
+        return None
+    path = Path(text).expanduser()
+    try:
+        path = path.resolve()
+    except OSError:
+        pass
+    return path
+
+
+def get_chrome_executable() -> str | None:
+    """Resolve the preferred Chrome binary.
+
+    Priority:
+    1. CHROME_EXECUTABLE / CHROME_PATH / PLAYWRIGHT_CHROME_PATH
+    2. F:\\chrome\\chrome.exe
+    """
+    candidates: list[Path] = []
+    for env_name in _CHROME_ENV_NAMES:
+        path = _normalize_chrome_candidate(os.getenv(env_name))
+        if path is not None:
+            candidates.append(path)
+    candidates.append(DEFAULT_CHROME_EXECUTABLE)
+
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.is_file():
+            return str(path)
+    return None
+
+
+def with_chrome_executable(
+    launch_kwargs: Mapping[str, Any] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Inject F:\\chrome executable_path into Playwright launch kwargs.
+
+    When a local Chrome binary is available, prefer it over channel=chrome /
+    bundled Chromium. Leaves channel=msedge (and other non-chrome channels)
+    alone so callers can still fall back to Edge intentionally.
+    """
+    opts: dict[str, Any] = dict(launch_kwargs or {})
+    opts.update(extra)
+    # Drop explicit None channel so callers can pass channel=None safely.
+    if opts.get("channel") is None:
+        opts.pop("channel", None)
+
+    chrome = get_chrome_executable()
+    if not chrome:
+        return opts
+
+    channel = opts.get("channel")
+    channel_text = str(channel or "").strip().lower()
+    if channel_text and channel_text not in {
+        "chrome",
+        "chromium",
+        "chrome-beta",
+        "chrome-dev",
+        "chrome-canary",
+    }:
+        return opts
+
+    opts.pop("channel", None)
+    opts["executable_path"] = chrome
+    return opts

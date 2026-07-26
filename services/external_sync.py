@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
+from platforms.deepseek.ds2api_upload import (
+    persist_ds2api_sync_result,
+    upload_to_ds2api,
+)
+from platforms.zai.zai2api_upload import (
+    persist_zai2api_sync_result,
+    upload_to_zai2api,
+)
 from services.chatgpt_sync import (
     _get_account_extra,
     persist_cpa_sync_result,
@@ -11,13 +19,9 @@ from services.chatgpt_sync import (
     upload_chatgpt_account_to_cpa,
 )
 from services.gpt_load_sync import (
-    upload_cerebras_account_to_gpt_load,
     persist_gpt_load_sync_result,
+    upload_cerebras_account_to_gpt_load,
     upload_nvidia_account_to_gpt_load,
-)
-from platforms.deepseek.ds2api_upload import (
-    persist_ds2api_sync_result,
-    upload_to_ds2api,
 )
 
 
@@ -49,7 +53,7 @@ def _resolve_gpt_load_group_name(config_store: Any, platform: str) -> str:
     return str(config_store.get("gpt_load_group_name", "") or "").strip()
 
 
-def sync_account(account) -> list[dict[str, Any]]:
+def sync_account(account, *, log: Callable[[str], None] = print) -> list[dict[str, Any]]:
     """根据平台将账号同步到外部系统。"""
     from core.config_store import config_store
 
@@ -95,6 +99,7 @@ def sync_account(account) -> list[dict[str, Any]]:
 
                 try:
                     import requests
+
                     from platforms.chatgpt.cpa_upload import generate_token_json
 
                     # 生成完整的 token JSON
@@ -246,19 +251,62 @@ def sync_account(account) -> list[dict[str, Any]]:
             persist_ds2api_sync_result(account, ok=ok, msg=msg, detail=detail)
             results.append({"name": "DS2API", "ok": ok, "msg": msg})
 
+    elif platform == "zai":
+        zai2api_url = str(config_store.get("zai_zai2api_url", "") or "").strip()
+        zai2api_auth_token = str(
+            config_store.get("zai_zai2api_auth_token", "") or ""
+        ).strip()
+        zai2api_enabled = _is_config_enabled(
+            config_store.get("zai_zai2api_enabled", ""),
+            default=bool(zai2api_url and zai2api_auth_token),
+        )
+        if zai2api_enabled:
+            ok, msg, detail = upload_to_zai2api(
+                account,
+                api_url=zai2api_url,
+                auth_token=zai2api_auth_token,
+            )
+            persist_zai2api_sync_result(account, ok=ok, msg=msg, detail=detail)
+            results.append({"name": "zai2api", "ok": ok, "msg": msg})
+
     elif platform == "grok":
-        grok2api_url = str(config_store.get("grok2api_url", "") or "").strip()
-        if grok2api_url:
-            from services.grok2api_runtime import ensure_grok2api_ready
-            from platforms.grok.grok2api_upload import upload_to_grok2api
+        # Hub 模式：默认不自动推送。账号只写 SQLite，由 sso2gropcpa
+        # --from-register-db 读库 → vault → 质检 → 投影 CPA/gork。
+        # 需要旧的「注册完立刻推」时设 grok_auto_upload=1。
+        grok_auto_upload = _is_config_enabled(
+            config_store.get("grok_auto_upload", ""),
+            default=False,
+        )
+        if not grok_auto_upload:
+            log(
+                "[Grok Hub] 已跳过自动推送（grok_auto_upload 未开启；"
+                "由 sso2gropcpa 读 account_manager.db）"
+            )
+        else:
+            grok2api_url = str(config_store.get("grok2api_url", "") or "").strip()
+            if grok2api_url:
+                from platforms.grok.grok2api_upload import upload_to_grok2api
+                from services.grok2api_runtime import ensure_grok2api_ready
 
-            ready, ready_msg = ensure_grok2api_ready()
-            if not ready:
-                results.append({"name": "grok2api", "ok": False, "msg": ready_msg})
-                return results
+                ready, ready_msg = ensure_grok2api_ready()
+                if not ready:
+                    results.append({"name": "grok2api", "ok": False, "msg": ready_msg})
+                else:
+                    ok, msg = upload_to_grok2api(account)
+                    results.append({"name": "grok2api", "ok": ok, "msg": msg})
 
-            ok, msg = upload_to_grok2api(account)
-            results.append({"name": "grok2api", "ok": ok, "msg": msg})
+            grok_cpa_enabled = _is_config_enabled(
+                config_store.get("grok_cpa_enabled", ""),
+                default=False,
+            )
+            if grok_cpa_enabled:
+                from platforms.grok.cpa_xai import mint_and_upload_xai_cpa
+
+                ok, msg, _ = mint_and_upload_xai_cpa(
+                    account,
+                    log=lambda message: log(f"[xAI CPA] {message}"),
+                )
+                results.append({"name": "xAI CPA", "ok": ok, "msg": msg})
 
     elif platform == "kiro":
         from platforms.kiro.account_manager_upload import resolve_manager_path, upload_to_kiro_manager
@@ -270,6 +318,19 @@ def sync_account(account) -> list[dict[str, Any]]:
             results.append({"name": "Kiro Manager", "ok": ok, "msg": msg})
 
     elif platform == "qwen":
+        # 支持 AccountModel (extra_json) 和 Account (extra) 两种格式
+        extra = {}
+        if hasattr(account, "extra"):
+            extra = account.extra or {}
+        elif hasattr(account, "get_extra"):
+            extra = account.get_extra() or {}
+        elif hasattr(account, "extra_json"):
+            import json
+            try:
+                extra = json.loads(account.extra_json or "{}")
+            except Exception:
+                extra = {}
+
         qwen_cpa_url = str(config_store.get("qwen_cpa_api_url", "") or "").strip()
         if not qwen_cpa_url:
             qwen_cpa_url = str(config_store.get("cpa_api_url", "") or "").strip()
@@ -285,18 +346,6 @@ def sync_account(account) -> list[dict[str, Any]]:
 
             qwen_account = _QwenAccount()
             qwen_account.email = account.email
-            # 支持 AccountModel (extra_json) 和 Account (extra) 两种格式
-            extra = {}
-            if hasattr(account, "extra"):
-                extra = account.extra or {}
-            elif hasattr(account, "get_extra"):
-                extra = account.get_extra() or {}
-            elif hasattr(account, "extra_json"):
-                import json
-                try:
-                    extra = json.loads(account.extra_json or "{}")
-                except Exception:
-                    extra = {}
             qwen_account.access_token = _pick_text(
                 extra,
                 "oauth_access_token",
@@ -329,6 +378,31 @@ def sync_account(account) -> list[dict[str, Any]]:
                     api_key=qwen_cpa_key or None,
                 )
                 results.append({"name": "Qwen CPA", "ok": ok, "msg": msg})
+
+        # OpenGate (Qwen Gate): upload email + password for dashboard pool rotation.
+        # API key is optional on many instances — /api/accounts often works without auth.
+        opengate_url = str(config_store.get("opengate_api_url", "") or "").strip()
+        opengate_key = str(config_store.get("opengate_api_key", "") or "").strip()
+        opengate_enabled = _is_config_enabled(
+            config_store.get("opengate_enabled", ""),
+            default=bool(opengate_url),
+        )
+        if opengate_enabled and opengate_url:
+            from platforms.qwen.opengate_upload import (
+                persist_opengate_sync_result,
+                upload_to_opengate,
+            )
+
+            ok, msg, detail = upload_to_opengate(
+                account,
+                api_url=opengate_url,
+                api_key=opengate_key or None,
+            )
+            try:
+                persist_opengate_sync_result(account, ok=ok, msg=msg, detail=detail)
+            except Exception:
+                pass
+            results.append({"name": "OpenGate", "ok": ok, "msg": msg})
 
     elif platform in {"nvidia", "cerebras"}:
         gpt_load_url = str(config_store.get("gpt_load_url", "") or "").strip()

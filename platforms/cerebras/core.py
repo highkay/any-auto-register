@@ -12,6 +12,7 @@ from typing import Any, Callable, Optional
 from core.browser_runtime import (
     ensure_browser_display_available,
     resolve_browser_headless,
+    with_chrome_executable,
 )
 from core.proxy_utils import build_playwright_proxy_config
 
@@ -163,7 +164,7 @@ class CerebrasRegister:
         ensure_browser_display_available(headless)
         self.log(f"浏览器模式: {'headless' if headless else 'headed'} ({reason})")
 
-        launch_kwargs: dict[str, Any] = {"headless": headless, "channel": "msedge"}
+        launch_kwargs: dict[str, Any] = with_chrome_executable(headless=headless)
         if self.proxy:
             proxy_cfg = build_playwright_proxy_config(self.proxy)
             if proxy_cfg:
@@ -171,8 +172,15 @@ class CerebrasRegister:
         try:
             browser = playwright.chromium.launch(**launch_kwargs)
         except Exception:
-            launch_kwargs.pop("channel", None)
-            browser = playwright.chromium.launch(**launch_kwargs)
+            # Fall back to Edge only when the preferred Chrome binary fails.
+            edge_kwargs = dict(launch_kwargs)
+            edge_kwargs.pop("executable_path", None)
+            edge_kwargs["channel"] = "msedge"
+            try:
+                browser = playwright.chromium.launch(**edge_kwargs)
+            except Exception:
+                edge_kwargs.pop("channel", None)
+                browser = playwright.chromium.launch(**edge_kwargs)
         return playwright, browser
 
     def _click_text_button(self, page, labels: list[str]) -> bool:

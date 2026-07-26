@@ -13,13 +13,13 @@ from typing import Any, Callable, Optional
 from core.browser_runtime import (
     ensure_browser_display_available,
     resolve_browser_headless,
+    with_chrome_executable,
 )
 from core.proxy_utils import (
     build_playwright_proxy_config,
     build_requests_proxy_config,
     is_authenticated_socks5_proxy,
 )
-
 
 SENTINEL_VERSION = "20260219f9f6"
 SENTINEL_SDK_URL = f"https://sentinel.openai.com/sentinel/{SENTINEL_VERSION}/sdk.js"
@@ -295,18 +295,8 @@ def get_sentinel_token_via_browser(
     """通过浏览器直接调用 SentinelSDK.token(flow) 获取完整 token。"""
     logger = log_fn or (lambda _msg: None)
 
-    if is_authenticated_socks5_proxy(proxy):
-        logger("Sentinel 检测到带认证 SOCKS5 代理: 跳过浏览器，改用 QuickJS 获取 token")
-        return _get_sentinel_token_via_quickjs(
-            flow=flow,
-            proxy=proxy,
-            timeout_ms=timeout_ms,
-            device_id=device_id,
-            logger=logger,
-        )
-
     try:
-        from playwright.sync_api import sync_playwright
+        from core.browser_backend import sync_playwright
     except Exception as e:
         logger(f"Sentinel Browser 不可用: {e}")
         return None
@@ -318,14 +308,23 @@ def get_sentinel_token_via_browser(
         f"Sentinel Browser 模式: {'headless' if effective_headless else 'headed'} ({reason})"
     )
 
-    launch_args: dict[str, Any] = {
-        "headless": effective_headless,
-        "args": [
+    launch_args: dict[str, Any] = with_chrome_executable(
+        headless=effective_headless,
+        args=[
             "--no-sandbox",
             "--disable-blink-features=AutomationControlled",
         ],
-    }
+    )
     proxy_config = build_playwright_proxy_config(proxy)
+    if is_authenticated_socks5_proxy(proxy) and not proxy_config:
+        logger("Sentinel 带认证 SOCKS5 代理桥不可用: 改用 QuickJS 获取 token")
+        return _get_sentinel_token_via_quickjs(
+            flow=flow,
+            proxy=proxy,
+            timeout_ms=timeout_ms,
+            device_id=device_id,
+            logger=logger,
+        )
     if proxy_config:
         launch_args["proxy"] = proxy_config
 

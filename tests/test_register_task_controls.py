@@ -91,6 +91,36 @@ class _FakeChatGPTWorkspacePlatform(BasePlatform):
         return True
 
 
+class _RetryableProxyBlockPlatform(BasePlatform):
+    name = "grok"
+    display_name = "Grok"
+
+    attempts: list[str | None] = []
+
+    def __init__(self, config=None, mailbox=None):
+        super().__init__(config)
+        self.mailbox = mailbox
+
+    @classmethod
+    def reset_attempts(cls):
+        cls.attempts = []
+
+    def register(self, email: str, password: str = None) -> Account:
+        type(self).attempts.append(self.config.proxy)
+        if "bad-proxy" in str(self.config.proxy or ""):
+            raise RuntimeError(
+                "Grok 注册页被 Cloudflare/WAF 封禁，当前代理不可用: title=Attention Required! | Cloudflare"
+            )
+        return Account(
+            platform="grok",
+            email="retry-success@example.com",
+            password=password or "pw",
+        )
+
+    def check_valid(self, account: Account) -> bool:
+        return True
+
+
 class RegisterTaskControlFlowTests(unittest.TestCase):
     def _build_request(self, **overrides):
         payload = {
@@ -183,6 +213,39 @@ class RegisterTaskControlFlowTests(unittest.TestCase):
             background_tasks.add_task.assert_not_called()
         finally:
             _task_store._records.pop(task_id, None)
+
+    def test_grok_retries_next_proxy_when_cloudflare_blocks_current_proxy(self):
+        task_id = "task-grok-proxy-retry"
+        req = self._build_request(platform="grok", count=1, concurrency=1, proxy=None)
+        _create_task_record(task_id, req, "manual", None)
+        _RetryableProxyBlockPlatform.reset_attempts()
+
+        with (
+            patch("core.registry.get", return_value=_RetryableProxyBlockPlatform),
+            patch("core.base_mailbox.create_mailbox", return_value=_FakeMailbox()),
+            patch("core.db.save_account", side_effect=lambda account: account),
+            patch("api.tasks._save_task_log"),
+            patch(
+                "core.proxy_pool.proxy_pool.get_next",
+                side_effect=["http://bad-proxy:8080", "http://good-proxy:8080"],
+            ),
+            patch("core.proxy_pool.proxy_pool.report_fail") as report_fail_mock,
+            patch("core.proxy_pool.proxy_pool.report_success") as report_success_mock,
+        ):
+            _run_register(task_id, req)
+
+        snapshot = _task_store.snapshot(task_id)
+        joined_logs = "\n".join(snapshot["logs"])
+
+        self.assertEqual(snapshot["status"], "done")
+        self.assertEqual(snapshot["success"], 1)
+        self.assertIn("当前代理被目标站封禁", joined_logs)
+        self.assertEqual(
+            _RetryableProxyBlockPlatform.attempts,
+            ["http://bad-proxy:8080", "http://good-proxy:8080"],
+        )
+        report_fail_mock.assert_called_once_with("http://bad-proxy:8080")
+        report_success_mock.assert_called_once_with("http://good-proxy:8080")
 
 
 if __name__ == "__main__":

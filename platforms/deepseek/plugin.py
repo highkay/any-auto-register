@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from core.base_mailbox import BaseMailbox
@@ -12,10 +13,12 @@ from platforms.deepseek.core import (
     DEEPSEEK_DEFAULT_REGION,
     DEEPSEEK_DEFAULT_TZ_OFFSET_SECONDS,
     DEEPSEEK_DEFAULT_UI_LOCALE,
+    DEEPSEEK_HCAPTCHA_SITEKEY,
     DeepSeekClient,
+    DeepSeekEmailDomainRejected,
     ensure_deepseek_email_sign_up_available_via_browser,
-    register_deepseek_via_browser,
     random_password,
+    register_deepseek_via_browser,
 )
 
 
@@ -77,35 +80,112 @@ class DeepSeekPlatform(BasePlatform):
             raise RuntimeError("DeepSeek 当前仅支持 mailbox provider 自动分配邮箱")
         if not self.mailbox:
             raise RuntimeError("DeepSeek 注册需要 mailbox provider 支持自动收码")
+        extra = self.config.extra or {}
+        browser_user_data_dir = (
+            str(extra.get("deepseek_browser_user_data_dir") or "").strip() or None
+        )
+        flaresolverr_url = str(
+            extra.get("deepseek_flaresolverr_url")
+            or extra.get("flaresolverr_url")
+            or ""
+        ).strip() or None
+        manual_send_code_handoff = (
+            str(self.config.captcha_solver or "").strip().lower() == "manual"
+        )
+        if manual_send_code_handoff and self.config.executor_type != "headed":
+            raise RuntimeError(
+                "DeepSeek captcha_solver=manual 需要 executor_type=headed，"
+                "以便人工接力完成 hCaptcha 发码"
+            )
         client = self._build_client(log)
         try:
             ensure_deepseek_email_sign_up_available_via_browser(
                 proxy=self.config.proxy,
                 ui_locale=client.ui_locale,
                 headless=self.config.executor_type != "headed",
+                user_data_dir=browser_user_data_dir,
+                flaresolverr_url=flaresolverr_url,
             )
 
-            mail_acct = self.mailbox.get_email()
-            current_email = mail_acct.email if mail_acct else ""
-            if not current_email:
-                raise RuntimeError("DeepSeek 未获取到可用邮箱")
+            from core.config_store import config_store
 
+            yescaptcha_key = str(
+                extra.get("yescaptcha_key")
+                or config_store.get("yescaptcha_key", "")
+                or os.getenv("YESCAPTCHA_KEY")
+                or ""
+            ).strip()
+            captcha_solver = None
+            if not manual_send_code_handoff:
+                captcha_solver = self._make_captcha(key=yescaptcha_key)
+            hcaptcha_sitekey = str(
+                extra.get("deepseek_hcaptcha_sitekey")
+                or config_store.get("deepseek_hcaptcha_sitekey", DEEPSEEK_HCAPTCHA_SITEKEY)
+                or DEEPSEEK_HCAPTCHA_SITEKEY
+            ).strip() or DEEPSEEK_HCAPTCHA_SITEKEY
+            try:
+                mailbox_attempts = int(
+                    str(
+                        extra.get("deepseek_mailbox_attempts")
+                        or config_store.get("deepseek_mailbox_attempts", "3")
+                        or "3"
+                    ).strip()
+                )
+            except (TypeError, ValueError):
+                mailbox_attempts = 3
+            mailbox_attempts = max(mailbox_attempts, 1)
             password_value = password or random_password()
-            before_ids = self.mailbox.get_current_ids(mail_acct)
-            otp_timeout = self.get_mailbox_otp_timeout(default=180)
-            log(f"[DeepSeek] 邮箱: {current_email}")
-            browser_state = register_deepseek_via_browser(
-                email=current_email,
-                password=password_value,
-                mailbox=self.mailbox,
-                mail_account=mail_acct,
-                before_ids=before_ids,
-                otp_timeout=otp_timeout,
-                proxy=self.config.proxy,
-                ui_locale=client.ui_locale,
-                headless=self.config.executor_type != "headed",
-                log_fn=log,
-            )
+            last_error: Exception | None = None
+
+            for attempt in range(1, mailbox_attempts + 1):
+                mail_acct = self.mailbox.get_email()
+                current_email = mail_acct.email if mail_acct else ""
+                if not current_email:
+                    raise RuntimeError("DeepSeek 未获取到可用邮箱")
+
+                before_ids = self.mailbox.get_current_ids(mail_acct)
+                otp_timeout = self.get_mailbox_otp_timeout(default=180)
+                log(f"[DeepSeek] 邮箱: {current_email}")
+                try:
+                    browser_state = register_deepseek_via_browser(
+                        email=current_email,
+                        password=password_value,
+                        mailbox=self.mailbox,
+                        mail_account=mail_acct,
+                        before_ids=before_ids,
+                        otp_timeout=otp_timeout,
+                        proxy=self.config.proxy,
+                        ui_locale=client.ui_locale,
+                        headless=self.config.executor_type != "headed",
+                        user_data_dir=browser_user_data_dir,
+                        flaresolverr_url=flaresolverr_url,
+                        captcha_solver=captcha_solver,
+                        hcaptcha_sitekey=hcaptcha_sitekey,
+                        task_control=getattr(self, "_task_control", None),
+                        tz_offset_seconds=client.tz_offset_seconds,
+                        pow_worker_url=client.pow_worker_url,
+                        manual_send_code_handoff=manual_send_code_handoff,
+                        log_fn=log,
+                    )
+                    break
+                except DeepSeekEmailDomainRejected as exc:
+                    last_error = exc
+                    rejected_domain = exc.domain or current_email
+                    if hasattr(self.mailbox, "blacklist_domain"):
+                        self.mailbox.blacklist_domain(
+                            rejected_domain,
+                            reason="DeepSeek 发码接口拒绝该邮箱域名",
+                        )
+                    if attempt < mailbox_attempts:
+                        log(
+                            "DeepSeek 当前邮箱域名不支持，切换新邮箱重试 "
+                            f"{attempt + 1}/{mailbox_attempts}: {exc}"
+                        )
+                        continue
+                    raise
+            else:
+                raise last_error if last_error else RuntimeError("DeepSeek 注册失败")
+
             log(
                 "[DeepSeek] 浏览器注册完成"
                 f" final_url={browser_state.get('final_url') or ''}"

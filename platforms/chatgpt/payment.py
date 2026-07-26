@@ -10,7 +10,11 @@ import sys
 from typing import Any, Optional
 
 from curl_cffi import requests as cffi_requests
-from core.browser_runtime import ensure_browser_display_available
+from core.browser_runtime import (
+    ensure_browser_display_available,
+    get_chrome_executable,
+    with_chrome_executable,
+)
 from core.proxy_utils import build_requests_proxy_config
 
 # from ..database.models import Account  # removed: external dep
@@ -73,6 +77,13 @@ def _open_url_system_browser(url: str) -> bool:
     """回退方案：调用系统浏览器以无痕模式打开"""
     platform = sys.platform
     try:
+        chrome = get_chrome_executable()
+        if chrome:
+            try:
+                subprocess.Popen([chrome, "--incognito", url])
+                return True
+            except Exception as exc:
+                logger.warning(f"F:\\chrome 无痕打开失败: {exc}")
         if platform == "win32":
             for browser, flag in [("chrome", "--incognito"), ("msedge", "--inprivate")]:
                 try:
@@ -203,16 +214,20 @@ def open_url_incognito(url: str, cookies_str: Optional[str] = None) -> bool:
     import threading
 
     try:
-        from playwright.sync_api import sync_playwright
+        from core.browser_backend import sync_playwright
     except ImportError:
-        logger.warning("playwright 未安装，回退到系统浏览器")
+        logger.warning("浏览器后端未安装，回退到系统浏览器")
         return _open_url_system_browser(url)
 
     def _launch():
         try:
             with sync_playwright() as p:
                 ensure_browser_display_available(False)
-                browser = p.chromium.launch(headless=False, args=["--incognito"])
+                browser = p.chromium.launch(
+                    **with_chrome_executable(
+                        headless=False, args=["--incognito"]
+                    )
+                )
                 ctx = browser.new_context()
                 if cookies_str:
                     ctx.add_cookies(_parse_cookie_str(cookies_str, "chatgpt.com"))

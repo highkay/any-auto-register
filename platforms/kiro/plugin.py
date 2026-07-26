@@ -162,6 +162,7 @@ class KiroPlatform(BasePlatform):
                                 provider=mail_provider,
                                 extra=mailbox_extra,
                                 proxy=self.config.proxy or "",
+                                platform=self.name,
                             )
                             mail_account = MailboxAccount(
                                 email=account.email,

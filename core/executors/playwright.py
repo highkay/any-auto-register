@@ -1,10 +1,15 @@
-"""Playwright 执行器 - 支持 headless/headed 模式"""
+"""Patchright-first 浏览器执行器 - 支持 headless/headed 模式"""
 
 import logging
 from typing import Any
 
+from .. import browser_backend
 from ..base_executor import BaseExecutor, Response
-from ..browser_runtime import ensure_browser_display_available, resolve_browser_headless
+from ..browser_runtime import (
+    ensure_browser_display_available,
+    resolve_browser_headless,
+    with_chrome_executable,
+)
 from ..proxy_utils import build_playwright_proxy_config
 
 
@@ -22,9 +27,7 @@ class PlaywrightExecutor(BaseExecutor):
         self._init()
 
     def _init(self) -> None:
-        from playwright.sync_api import sync_playwright
-
-        self._pw = sync_playwright().start()
+        self._pw = browser_backend.sync_playwright().start()
         headless, reason = resolve_browser_headless(self.headless)
         ensure_browser_display_available(headless)
         logger.info(
@@ -32,8 +35,9 @@ class PlaywrightExecutor(BaseExecutor):
             "headless" if headless else "headed",
             reason,
         )
+        logger.info("PlaywrightExecutor 浏览器后端: %s", browser_backend.BACKEND_NAME)
 
-        launch_opts: dict[str, Any] = {"headless": headless}
+        launch_opts: dict[str, Any] = with_chrome_executable(headless=headless)
         if self.proxy:
             proxy_cfg = build_playwright_proxy_config(self.proxy)
             if proxy_cfg:
@@ -126,6 +130,11 @@ class PlaywrightExecutor(BaseExecutor):
             )
 
     def close(self) -> None:
+        if self._page:
+            try:
+                self._page.close()
+            except Exception:
+                pass
         if self._browser:
             self._browser.close()
         if self._pw:
